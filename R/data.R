@@ -1,0 +1,40 @@
+#' UN peacekeeping contributions, state-years
+#'
+#' A state-year panel of contributions to United Nations peacekeeping
+#' operations, the archetype of a bounded, underdispersed participation count:
+#' most state-years contribute to no operation, and the states that contribute
+#' carry a tight count held in a narrow band by a turning-over roster. About
+#' 42\% of state-years are zero, so it is also a natural example for the
+#' hurdle-CPB.
+#'
+#' @format A data frame with 4,448 rows and 9 variables:
+#' \describe{
+#'   \item{iso3}{ISO3 country code (the panel unit).}
+#'   \item{year}{Calendar year, 1990--2024.}
+#'   \item{contributions}{Number of distinct UN peacekeeping operations the
+#'     state contributes personnel to in that year (the count outcome).}
+#'   \item{democracy}{Electoral-democracy index.}
+#'   \item{lgdppc}{Log GDP per capita.}
+#'   \item{lpop}{Log population.}
+#'   \item{milper}{Military personnel, thousands.}
+#'   \item{majorpower}{Major-power indicator (0/1).}
+#'   \item{region}{World region.}
+#' }
+#' @source Contribution counts aggregated from the International Peace Institute
+#'   Providing for Peacekeeping database
+#'   (\url{https://www.providingforpeacekeeping.org}); covariates from V-Dem and
+#'   the Correlates of War National Material Capabilities data. Counts and public
+#'   covariates only; prepared for illustration.
+#' @docType data
+#' @keywords datasets
+#' @name peacekeeping
+#' @usage data(peacekeeping)
+#' @examples
+#' data(peacekeeping)
+#' table(peacekeeping$contributions == 0)
+#' \donttest{
+#' fit <- hurdle_cpb(contributions ~ lgdppc + milper, data = peacekeeping,
+#'                   participation = ~ democracy + majorpower, fe = "iso3")
+#' fit
+#' }
+NULL

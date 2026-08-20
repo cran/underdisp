@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Detecting and Modeling Underdispersed Counts</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Detecting and Modeling Underdispersed
+Counts</h1>
+
+
+
+<p><code>underdisp</code> provides tools for detecting and modeling
+<em>underdispersion</em> in count data: the case where the conditional
+variance is below the conditional mean, so counts cluster more tightly
+around their expectation than a Poisson allows. The Poisson and negative
+binomial defaults cannot represent it; the negative binomial in
+particular collapses onto the Poisson when the data are
+underdispersed.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(underdisp)</span></code></pre></div>
+<div id="simulating-an-underdispersed-count" class="section level2">
+<h2>Simulating an underdispersed count</h2>
+<p>We generate a count with a conditional variance-to-mean ratio of
+about one half.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">400</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>N <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="fu">round</span>(<span class="fu">exp</span>(<span class="fl">1.6</span> <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> x) <span class="sc">/</span> <span class="fl">0.5</span>), <span class="dv">1</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>y <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, N, <span class="fl">0.5</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">y =</span> y, <span class="at">x =</span> x)</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="fu">c</span>(<span class="at">mean =</span> <span class="fu">mean</span>(y), <span class="at">var =</span> <span class="fu">var</span>(y), <span class="at">ratio =</span> <span class="fu">var</span>(y) <span class="sc">/</span> <span class="fu">mean</span>(y))</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt;      mean       var     ratio </span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;  5.527500 10.435332  1.887894</span></span></code></pre></div>
+</div>
+<div id="screening" class="section level2">
+<h2>Screening</h2>
+<p><code>ud_screen()</code> returns a marginal verdict, and, for
+zero-inflated outcomes, an at-risk verdict benchmarked against a
+<em>zero-truncated</em> Poisson (which is what separates genuine
+underdispersion from the artifact of conditioning on positive
+counts).</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">ud_screen</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d, <span class="at">run_cpb =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="co">#&gt; === Underdispersion screen ===</span></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt; Formula: y ~ x </span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; N=400  mean=5.527  max=22  %zero=1.8  (unconditional var/mean=1.89)</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; MARGINAL verdict: UNDERDISPERSED </span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt;    Pearson=0.564  prop.slope=-0.391 (p=&lt;2e-16)</span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;    NB vs Poisson LR = -0.01 (p= 0.5 ; sig =&gt; overdispersion)</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; AT-RISK (y&gt;0) verdict:UNDERDISPERSED  [n_pos=393]</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;    ZTP-Pearson = 0.569  (underdispersed if &lt; 0.885, the calibrated 5% threshold)</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; Model comparison (log-lik):</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt;  Poisson       NB       GP     COMP      CPB </span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt; -798.901 -798.904 -798.901 -772.010       NA </span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt; COM-Poisson (full data): nu = 1.84  (&gt; 1 = underdispersed, soft tail)</span></span></code></pre></div>
+</div>
+<div id="fitting-the-continuous-parameter-binomial" class="section level2">
+<h2>Fitting the continuous parameter binomial</h2>
+<p><code>cpb()</code> fits the CPB, with <code>truncated = TRUE</code>
+for the common case in which underdispersion lives among the positive
+counts of a zero-inflated outcome.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">cpb</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d[d<span class="sc">$</span>y <span class="sc">&gt;</span> <span class="dv">0</span>, ], <span class="at">se =</span> <span class="st">&quot;none&quot;</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">summary</span>(fit)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; Continuous Parameter Binomial regression (zero-truncated)</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; N = 393    inference: none </span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt;             Estimate Std. Error z value Pr(&gt;|z|)</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; (Intercept)   1.5797         NA      NA       NA</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; x             0.4931         NA      NA       NA</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt; alpha = 0.5279   (profile 95% CI: 0.509 to 0.613)</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; Implied ceiling lambda/(1-alpha): median 10.24   range 2.47 to 37.96 </span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; logLik = -745.06    AIC = 1496.13 </span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; LR vs ZT-Poisson (H0: alpha = 1): 58.62, p 9.5445e-15</span></span></code></pre></div>
+<p>The dispersion parameter <code>alpha</code> summarizes the
+compression, and each observation carries an implied ceiling
+<code>lambda / (1 - alpha)</code>.</p>
+</div>
+<div id="quantities-of-interest" class="section level2">
+<h2>Quantities of interest</h2>
+<p>Predicted probabilities, the implied ceiling, and King-style first
+differences are available for user-specified covariate profiles.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">predict</span>(fit, <span class="at">newdata =</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>)), <span class="at">type =</span> <span class="st">&quot;response&quot;</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="co">#&gt; [1] 2.964188 4.853495 7.947003</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="fu">implied_ceiling</span>(fit, <span class="at">newdata =</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="dv">0</span>))</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt;     lambda  ceiling    lower    upper</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; 1 4.853495 10.28058 9.892111 12.55079</span></span></code></pre></div>
+</div>
+<div id="bootstrap-inference" class="section level2">
+<h2>Bootstrap inference</h2>
+<p>Because the CPB’s support depends on its parameters, Hessian-based
+standard errors are unreliable; coefficient inference uses a
+cold-multistart pairs bootstrap (validated to nominal coverage in the
+companion paper), and the dispersion parameter carries a
+profile-likelihood interval.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>fit_b <span class="ot">&lt;-</span> <span class="fu">cpb</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d[d<span class="sc">$</span>y <span class="sc">&gt;</span> <span class="dv">0</span>, ], <span class="at">se =</span> <span class="st">&quot;bootstrap&quot;</span>, <span class="at">B =</span> <span class="dv">99</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">summary</span>(fit_b)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; Continuous Parameter Binomial regression (zero-truncated)</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; N = 393    inference: bootstrap </span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt;             Estimate Std. Error z value  Pr(&gt;|z|)    </span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; (Intercept) 1.579699   0.017471  90.417 &lt; 2.2e-16 ***</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; x           0.493096   0.018320  26.915 &lt; 2.2e-16 ***</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt; alpha = 0.5279   (profile 95% CI: 0.509 to 0.613)</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt; Implied ceiling lambda/(1-alpha): median 10.24   range 2.47 to 37.96 </span></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt; logLik = -745.06    AIC = 1496.13 </span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt; LR vs ZT-Poisson (H0: alpha = 1): 58.62, p 9.5445e-15</span></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt; (99 bootstrap resamples converged)</span></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="fu">irr</span>(fit_b)             <span class="co"># incidence-rate ratios with percentile intervals</span></span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;         term equation ratio estimate lower upper             method</span></span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt;  (Intercept)    count   IRR    4.853 4.722 5.045 bootstrap (stored)</span></span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a><span class="co">#&gt;            x    count   IRR    1.637 1.579 1.688 bootstrap (stored)</span></span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a><span class="fu">alpha_confint</span>(fit_b)   <span class="co"># profile-likelihood interval for alpha</span></span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a><span class="co">#&gt;     lower     upper </span></span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a><span class="co">#&gt; 0.5093570 0.6132917 </span></span>
+<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a><span class="co">#&gt; attr(,&quot;alpha&quot;)</span></span>
+<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a><span class="co">#&gt;           </span></span>
+<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a><span class="co">#&gt; 0.5278969 </span></span>
+<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a><span class="co">#&gt; attr(,&quot;boundary&quot;)</span></span>
+<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a><span class="co">#&gt; boundary </span></span>
+<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a><span class="co">#&gt;    FALSE</span></span></code></pre></div>
+</div>
+<div id="the-free-dispersion-gec" class="section level2">
+<h2>The free-dispersion GEC</h2>
+<p><code>gec()</code> fits King’s generalized event count (Katz) model,
+whose dispersion <code>delta</code> (the variance-to-mean ratio) is
+estimated freely — so the data choose the direction of dispersion rather
+than the analyst presuming it. On the underdispersed count above it
+recovers <code>delta</code> well below one; on a Poisson outcome it sits
+at one.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">gec</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d, <span class="at">se =</span> <span class="st">&quot;none&quot;</span>)                                  <span class="co"># delta ~ 0.5</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="co">#&gt; Generalized event count (Katz family) regression</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; Call:  gec(formula = y ~ x, data = d, se = &quot;none&quot;)</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; (Intercept)           x </span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt;      1.5768      0.4964 </span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; dispersion delta (Var/Mean) = 0.553  [underdispersed]</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; logLik = -769.78,  n = 400</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="fu">gec</span>(y <span class="sc">~</span> x, <span class="at">data =</span> <span class="fu">data.frame</span>(<span class="at">y =</span> <span class="fu">rpois</span>(n, <span class="fu">exp</span>(<span class="dv">1</span> <span class="sc">+</span> <span class="fl">0.4</span> <span class="sc">*</span> x)), <span class="at">x =</span> x),</span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>    <span class="at">se =</span> <span class="st">&quot;none&quot;</span>)                                                   <span class="co"># delta ~ 1</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; Generalized event count (Katz family) regression</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; Call:  gec(formula = y ~ x, data = data.frame(y = rpois(n, exp(1 + 0.4 *     x)), x = x), se = &quot;none&quot;)</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; (Intercept)           x </span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt;      0.9650      0.3493 </span></span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt; dispersion delta (Var/Mean) = 0.954  [underdispersed]</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt; logLik = -740.83,  n = 400</span></span></code></pre></div>
+<p>The GEC carries the same zero-truncated, hurdle
+(<code>hurdle_gec()</code>), zero-inflated (<code>zi_gec()</code>), and
+fixed-effects (<code>gec_fe()</code>) variants as the CPB.</p>
+</div>
+<div id="high-dimensional-fixed-effects" class="section level2">
+<h2>High-dimensional fixed effects</h2>
+<p>Underdispersion is typically a <em>within-unit</em> phenomenon that
+pooled analyses hide. <code>cpb_fe()</code> absorbs a full set of unit
+fixed effects by concentrating them out of the likelihood, so it scales
+to thousands of units.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>panel <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">50</span>, <span class="cf">function</span>(i) {</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  xx <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">12</span>); NN <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="fu">round</span>(<span class="fu">exp</span>(<span class="fu">rnorm</span>(<span class="dv">1</span>, <span class="dv">0</span>, <span class="fl">0.4</span>) <span class="sc">+</span> <span class="fl">0.4</span> <span class="sc">*</span> xx) <span class="sc">/</span> <span class="fl">0.5</span>), <span class="dv">1</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">unit =</span> i, <span class="at">x =</span> xx, <span class="at">y =</span> <span class="fu">rbinom</span>(<span class="dv">12</span>, NN, <span class="fl">0.5</span>))</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>}))</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="fu">cpb_fe</span>(y <span class="sc">~</span> x, <span class="at">data =</span> panel, <span class="at">fe =</span> <span class="st">&quot;unit&quot;</span>)</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt; CPB regression with 50 unit fixed effects (concentrated likelihood)</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; Coefficients:</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt;      x </span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt; 0.3119 </span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; alpha (shape parameter): 0.4769   median implied bound: 2.27 </span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt; Note: alpha is subject to incidental-parameters bias for short panels; see ?cpb_fe.</span></span></code></pre></div>
+</div>
+<div id="comparing-the-family" class="section level2">
+<h2>Comparing the family</h2>
+<p><code>compare_dispersion()</code> fits the Poisson, negative
+binomial, the native soft-tail COM-Poisson, the free-dispersion GEC, and
+the hard-ceiling CPB, and reports a fit comparison plus the CPB’s
+ceiling-exceedance share.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">compare_dispersion</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d)<span class="sc">$</span>table</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="co">#&gt;             df    logLik      AIC      BIC logscore       rps    zero_fit</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co">#&gt; Poisson      2 -798.9009 1601.802 1609.785 1.997252 0.9855061 0.024243957</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co">#&gt; NegBinomial  3 -798.9042 1603.808 1615.783 1.997261 0.9855095 0.024244780</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; COM-Poisson  3 -772.0096 1550.019 1561.994 1.930024 0.9631112 0.009312096</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt; CPB          3 -769.2026 1544.405 1556.380 1.923006 0.9642624 0.010309391</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; GEC          3 -769.7769 1545.554 1557.528 1.924442 0.9644021 0.010538704</span></span></code></pre></div>
+</div>
+<div id="matched-poisson-nb-and-com-poisson-baselines" class="section level2">
+<h2>Matched Poisson, NB, and COM-Poisson baselines</h2>
+<p>For model selection, <code>count_reg()</code> fits Poisson,
+negative-binomial, and COM-Poisson regressions – each with the same
+fixed-effects, zero-truncation, hurdle, zero-inflation, offset, and
+robust-/cluster-standard-error options as the CPB – so
+<code>compare_models()</code> can place the CPB next to its baselines on
+one footing (identical degrees of freedom, log-likelihood, and
+proper-score accounting).</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>cpb_fit <span class="ot">&lt;-</span> <span class="fu">cpb</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d, <span class="at">truncated =</span> <span class="cn">FALSE</span>, <span class="at">se =</span> <span class="st">&quot;none&quot;</span>)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="fu">compare_models</span>(</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">CPB          =</span> cpb_fit,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">Poisson      =</span> <span class="fu">count_reg</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d, <span class="at">family =</span> <span class="st">&quot;poisson&quot;</span>),</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">NB           =</span> <span class="fu">count_reg</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d, <span class="at">family =</span> <span class="st">&quot;negbin&quot;</span>),</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="st">`</span><span class="at">COM-Poisson</span><span class="st">`</span><span class="ot">=</span> <span class="fu">count_reg</span>(y <span class="sc">~</span> x, <span class="at">data =</span> d, <span class="at">family =</span> <span class="st">&quot;compois&quot;</span>)</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>)</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;             df    logLik      AIC      BIC logscore       rps</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt; CPB          3 -769.2026 1544.405 1556.380 1.923006 0.9642624</span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt; COM-Poisson  3 -772.0096 1550.019 1561.994 1.930024 0.9631112</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="co">#&gt; Poisson      2 -798.9009 1601.802 1609.785 1.997252 0.9855061</span></span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="co">#&gt; NB           3 -798.9011 1603.802 1615.777 1.997253 0.9855063</span></span></code></pre></div>
+<p>On underdispersed data the negative binomial collapses onto the
+Poisson, while the CPB and COM-Poisson capture the compression and win
+on AIC and the proper scores. The correlated-random-effects device
+(<code>mundlak()</code>) and matching
+<code>d</code>/<code>p</code>/<code>q</code>/<code>r</code> functions
+(e.g. <code>rcompois()</code>, <code>dcpb()</code>) round out the
+family.</p>
+</div>
+<div id="excess-zeros-hurdle-and-zero-inflated-models" class="section level2">
+<h2>Excess zeros: hurdle and zero-inflated models</h2>
+<p>Many count outcomes mix a participation process (most units at zero)
+with a tight positive count. The bundled peacekeeping panel – the number
+of UN operations each state contributes troops to per year – shows the
+package’s central move: marginally the count looks overdispersed, but
+conditioning on country fixed effects and benchmarking the positive
+counts against a zero-truncated Poisson, the at-risk process is
+underdispersed.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">data</span>(peacekeeping)</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="fu">ud_screen</span>(contributions <span class="sc">~</span> democracy <span class="sc">+</span> lgdppc <span class="sc">+</span> lpop <span class="sc">+</span> milper <span class="sc">+</span> <span class="fu">factor</span>(iso3),</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>          <span class="at">data =</span> peacekeeping, <span class="at">run_cpb =</span> <span class="cn">FALSE</span>, <span class="at">run_gp =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co">#&gt; === Underdispersion screen ===</span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co">#&gt; Formula: contributions ~ democracy + lgdppc + lpop + milper + factor(iso3) </span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt; N=4448  mean=3.191  max=18  %zero=41.5  (unconditional var/mean=4.56)</span></span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a><span class="co">#&gt; MARGINAL verdict: OVERDISPERSED </span></span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a><span class="co">#&gt;    Pearson=1.086  prop.slope=0.191 (p=&lt;2e-16)</span></span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a><span class="co">#&gt;    NB vs Poisson LR = 18.1 (p= 1e-05 ; sig =&gt; overdispersion)</span></span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a><span class="co">#&gt; AT-RISK (y&gt;0) verdict:UNDERDISPERSED  [n_pos=2602]</span></span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co">#&gt;    ZTP-Pearson = 0.841  (underdispersed if &lt; 0.955, the calibrated 5% threshold)</span></span>
+<span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-16"><a href="#cb11-16" tabindex="-1"></a><span class="co">#&gt; Model comparison (log-lik):</span></span>
+<span id="cb11-17"><a href="#cb11-17" tabindex="-1"></a><span class="co">#&gt;   Poisson        NB        GP      COMP       CPB </span></span>
+<span id="cb11-18"><a href="#cb11-18" tabindex="-1"></a><span class="co">#&gt; -6645.816 -6636.765        NA        NA        NA</span></span></code></pre></div>
+<p>That is the case for a two-part model with an underdispersed
+intensity. <code>hurdle_cpb()</code> joins a participation logit to a
+zero-truncated CPB, and <code>zi_cpb()</code> fits the structural-zero
+mixture; <code>zi_test()</code> and <code>compare_models()</code>
+adjudicate between them.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>z <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>yh <span class="ot">&lt;-</span> <span class="fu">rhurdle_cpb</span>(n, <span class="at">lambda =</span> <span class="fu">exp</span>(<span class="fl">1.2</span> <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> x), <span class="at">alpha =</span> <span class="fl">0.5</span>,</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>                  <span class="at">p =</span> <span class="fu">plogis</span>(<span class="fl">0.3</span> <span class="sc">+</span> <span class="fl">0.8</span> <span class="sc">*</span> z))</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>dh <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">y =</span> yh, <span class="at">x =</span> x, <span class="at">z =</span> z)</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fu">hurdle_cpb</span>(y <span class="sc">~</span> x, <span class="at">data =</span> dh, <span class="at">participation =</span> <span class="sc">~</span> z)</span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>zi <span class="ot">&lt;-</span> <span class="fu">zi_cpb</span>(y <span class="sc">~</span> x, <span class="at">data =</span> dh, <span class="at">zero =</span> <span class="sc">~</span> z)</span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="fu">compare_models</span>(<span class="at">hurdle =</span> h, <span class="at">mixture =</span> zi)</span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a><span class="co">#&gt;         df    logLik      AIC      BIC logscore      rps</span></span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt; hurdle   5 -609.9920 1229.984 1249.941 1.524980 1.039177</span></span>
+<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a><span class="co">#&gt; mixture  5 -610.1172 1230.234 1250.192 1.525293 1.040127</span></span></code></pre></div>
+<p>The hurdle’s <code>first_difference()</code> separates the extensive
+and intensive margins exactly – which channel a covariate moves, not
+just the blended marginal effect. One practical note: because the hurdle
+factorizes, its participation stage is an ordinary logistic regression;
+if a dummy-heavy participation equation separates, fit that stage with a
+dedicated bias-reduction package (<code>logistf</code>,
+<code>brglm2</code>) alongside this package’s zero-truncated
+intensity.</p>
+</div>
+<div id="short-panels-bias-corrected-fixed-effects" class="section level2">
+<h2>Short panels: bias-corrected fixed effects</h2>
+<p>The concentrated fixed-effects dispersion estimate carries the
+incidental- parameters bias of order 1/T: with few observations per
+unit, <code>alpha</code> is biased <em>downward</em> (the panel looks
+more underdispersed than it is). <code>bias_correct = &quot;jackknife&quot;</code>
+removes the leading bias term by the split-panel jackknife of Dhaene and
+Jochmans (2015), refitting on each unit’s temporal halves.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>short <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">30</span>, <span class="cf">function</span>(i) {</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>  xx <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">8</span>); NN <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="fu">round</span>(<span class="fu">exp</span>(<span class="fl">1.0</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, <span class="dv">0</span>, <span class="fl">0.4</span>) <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> xx) <span class="sc">/</span> <span class="fl">0.5</span>), <span class="dv">1</span>)</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">unit =</span> i, <span class="at">x =</span> xx, <span class="at">y =</span> <span class="fu">rbinom</span>(<span class="dv">8</span>, NN, <span class="fl">0.5</span>))</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>}))</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>ml <span class="ot">&lt;-</span> <span class="fu">cpb_fe</span>(y <span class="sc">~</span> x, <span class="at">data =</span> short, <span class="at">fe =</span> <span class="st">&quot;unit&quot;</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>jk <span class="ot">&lt;-</span> <span class="fu">cpb_fe</span>(y <span class="sc">~</span> x, <span class="at">data =</span> short, <span class="at">fe =</span> <span class="st">&quot;unit&quot;</span>, <span class="at">bias_correct =</span> <span class="st">&quot;jackknife&quot;</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a><span class="fu">c</span>(<span class="at">ml =</span> ml<span class="sc">$</span>alpha, <span class="at">jackknife =</span> jk<span class="sc">$</span>alpha)   <span class="co"># truth is 0.5; ML is biased downward</span></span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a><span class="co">#&gt;        ml jackknife </span></span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a><span class="co">#&gt; 0.4348484 0.5288745</span></span></code></pre></div>
+<p>The correction is only valid when the two half-panels estimate the
+same parameter (the method’s time-homogeneity requirement), so it
+carries a validity gate: the panel is also split cross-sectionally by
+units – a placebo that is exchangeable under any time pattern – and if
+the temporal halves disagree beyond that placebo noise, the correction
+is <em>refused</em> with a warning naming the failed assumption and the
+maximum-likelihood fit is returned. On a trending or regime-changing
+panel, the refusal is the correct answer. The gate is deliberately
+powered over sized: in calibration it refuses about 9% of genuinely
+homogeneous panels (you keep the ordinary ML fit) while catching 98% of
+dispersion regime changes and all smooth unmodeled trends.</p>
+</div>
+<div id="simulated-residual-diagnostics-with-dharma" class="section level2">
+<h2>Simulated-residual diagnostics with DHARMa</h2>
+<p>Every fitted model in the package has a <code>simulate()</code>
+method, so the whole family plugs into <code>DHARMa</code>’s
+simulated-residual diagnostics.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>sims <span class="ot">&lt;-</span> <span class="fu">simulate</span>(h, <span class="at">nsim =</span> <span class="dv">100</span>, <span class="at">seed =</span> <span class="dv">1</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>res <span class="ot">&lt;-</span> DHARMa<span class="sc">::</span><span class="fu">createDHARMa</span>(<span class="at">simulatedResponse =</span> <span class="fu">as.matrix</span>(sims),</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>                            <span class="at">observedResponse  =</span> dh<span class="sc">$</span>y,</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>                            <span class="at">fittedPredictedResponse =</span> <span class="fu">fitted</span>(h),</span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>                            <span class="at">integerResponse =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a><span class="fu">plot</span>(res)</span></code></pre></div>
+<p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

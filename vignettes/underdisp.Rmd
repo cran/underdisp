@@ -1,0 +1,231 @@
+---
+title: "Detecting and Modeling Underdispersed Counts"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Detecting and Modeling Underdispersed Counts}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
+set.seed(1)
+```
+
+`underdisp` provides tools for detecting and modeling *underdispersion* in count
+data: the case where the conditional variance is below the conditional mean, so
+counts cluster more tightly around their expectation than a Poisson allows. The
+Poisson and negative binomial defaults cannot represent it; the negative binomial
+in particular collapses onto the Poisson when the data are underdispersed.
+
+```{r setup}
+library(underdisp)
+```
+
+## Simulating an underdispersed count
+
+We generate a count with a conditional variance-to-mean ratio of about one half.
+
+```{r sim}
+n <- 400
+x <- rnorm(n)
+N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1)
+y <- rbinom(n, N, 0.5)
+d <- data.frame(y = y, x = x)
+c(mean = mean(y), var = var(y), ratio = var(y) / mean(y))
+```
+
+## Screening
+
+`ud_screen()` returns a marginal verdict, and, for zero-inflated outcomes, an
+at-risk verdict benchmarked against a *zero-truncated* Poisson (which is what
+separates genuine underdispersion from the artifact of conditioning on positive
+counts).
+
+```{r screen}
+ud_screen(y ~ x, data = d, run_cpb = FALSE)
+```
+
+## Fitting the continuous parameter binomial
+
+`cpb()` fits the CPB, with `truncated = TRUE` for the common case in which
+underdispersion lives among the positive counts of a zero-inflated outcome.
+
+```{r fit}
+fit <- cpb(y ~ x, data = d[d$y > 0, ], se = "none")
+summary(fit)
+```
+
+The dispersion parameter `alpha` summarizes the compression, and each observation
+carries an implied ceiling `lambda / (1 - alpha)`.
+
+## Quantities of interest
+
+Predicted probabilities, the implied ceiling, and King-style first differences
+are available for user-specified covariate profiles.
+
+```{r qoi}
+predict(fit, newdata = data.frame(x = c(-1, 0, 1)), type = "response")
+implied_ceiling(fit, newdata = data.frame(x = 0))
+```
+
+## Bootstrap inference
+
+Because the CPB's support depends on its parameters, Hessian-based standard
+errors are unreliable; coefficient inference uses a cold-multistart pairs
+bootstrap (validated to nominal coverage in the companion paper), and the
+dispersion parameter carries a profile-likelihood interval.
+
+```{r boot}
+fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 99)
+summary(fit_b)
+irr(fit_b)             # incidence-rate ratios with percentile intervals
+alpha_confint(fit_b)   # profile-likelihood interval for alpha
+```
+
+## The free-dispersion GEC
+
+`gec()` fits King's generalized event count (Katz) model, whose dispersion
+`delta` (the variance-to-mean ratio) is estimated freely — so the data choose
+the direction of dispersion rather than the analyst presuming it. On the
+underdispersed count above it recovers `delta` well below one; on a Poisson
+outcome it sits at one.
+
+```{r gec}
+gec(y ~ x, data = d, se = "none")                                  # delta ~ 0.5
+gec(y ~ x, data = data.frame(y = rpois(n, exp(1 + 0.4 * x)), x = x),
+    se = "none")                                                   # delta ~ 1
+```
+
+The GEC carries the same zero-truncated, hurdle (`hurdle_gec()`), zero-inflated
+(`zi_gec()`), and fixed-effects (`gec_fe()`) variants as the CPB.
+
+## High-dimensional fixed effects
+
+Underdispersion is typically a *within-unit* phenomenon that pooled analyses
+hide. `cpb_fe()` absorbs a full set of unit fixed effects by concentrating them
+out of the likelihood, so it scales to thousands of units.
+
+```{r fe}
+panel <- do.call(rbind, lapply(1:50, function(i) {
+  xx <- rnorm(12); NN <- pmax(round(exp(rnorm(1, 0, 0.4) + 0.4 * xx) / 0.5), 1)
+  data.frame(unit = i, x = xx, y = rbinom(12, NN, 0.5))
+}))
+cpb_fe(y ~ x, data = panel, fe = "unit")
+```
+
+## Comparing the family
+
+`compare_dispersion()` fits the Poisson, negative binomial, the native
+soft-tail COM-Poisson, the free-dispersion GEC, and the hard-ceiling CPB, and
+reports a fit comparison plus the CPB's ceiling-exceedance share.
+
+```{r family}
+compare_dispersion(y ~ x, data = d)$table
+```
+
+## Matched Poisson, NB, and COM-Poisson baselines
+
+For model selection, `count_reg()` fits Poisson, negative-binomial, and
+COM-Poisson regressions -- each with the same fixed-effects, zero-truncation,
+hurdle, zero-inflation, offset, and robust-/cluster-standard-error options as the
+CPB -- so `compare_models()` can place the CPB next to its baselines on one
+footing (identical degrees of freedom, log-likelihood, and proper-score
+accounting).
+
+```{r matched}
+cpb_fit <- cpb(y ~ x, data = d, truncated = FALSE, se = "none")
+compare_models(
+  CPB          = cpb_fit,
+  Poisson      = count_reg(y ~ x, data = d, family = "poisson"),
+  NB           = count_reg(y ~ x, data = d, family = "negbin"),
+  `COM-Poisson`= count_reg(y ~ x, data = d, family = "compois")
+)
+```
+
+On underdispersed data the negative binomial collapses onto the Poisson, while
+the CPB and COM-Poisson capture the compression and win on AIC and the proper
+scores. The correlated-random-effects device (`mundlak()`) and matching
+`d`/`p`/`q`/`r` functions (e.g. `rcompois()`, `dcpb()`) round out the family.
+
+## Excess zeros: hurdle and zero-inflated models
+
+Many count outcomes mix a participation process (most units at zero) with a
+tight positive count. The bundled peacekeeping panel -- the number of UN
+operations each state contributes troops to per year -- shows the package's
+central move: marginally the count looks overdispersed, but conditioning on
+country fixed effects and benchmarking the positive counts against a
+zero-truncated Poisson, the at-risk process is underdispersed.
+
+```{r pkscreen}
+data(peacekeeping)
+ud_screen(contributions ~ democracy + lgdppc + lpop + milper + factor(iso3),
+          data = peacekeeping, run_cpb = FALSE, run_gp = FALSE)
+```
+
+That is the case for a two-part model with an underdispersed intensity.
+`hurdle_cpb()` joins a participation logit to a zero-truncated CPB, and
+`zi_cpb()` fits the structural-zero mixture; `zi_test()` and `compare_models()`
+adjudicate between them.
+
+```{r hurdle}
+z <- rnorm(n)
+yh <- rhurdle_cpb(n, lambda = exp(1.2 + 0.3 * x), alpha = 0.5,
+                  p = plogis(0.3 + 0.8 * z))
+dh <- data.frame(y = yh, x = x, z = z)
+h <- hurdle_cpb(y ~ x, data = dh, participation = ~ z)
+zi <- zi_cpb(y ~ x, data = dh, zero = ~ z)
+compare_models(hurdle = h, mixture = zi)
+```
+
+The hurdle's `first_difference()` separates the extensive and intensive
+margins exactly -- which channel a covariate moves, not just the blended
+marginal effect. One practical note: because the hurdle factorizes, its
+participation stage is an ordinary logistic regression; if a dummy-heavy
+participation equation separates, fit that stage with a dedicated
+bias-reduction package (`logistf`, `brglm2`) alongside this package's
+zero-truncated intensity.
+
+## Short panels: bias-corrected fixed effects
+
+The concentrated fixed-effects dispersion estimate carries the incidental-
+parameters bias of order 1/T: with few observations per unit, `alpha` is biased
+*downward* (the panel looks more underdispersed than it is).
+`bias_correct = "jackknife"` removes the leading bias term by the split-panel
+jackknife of Dhaene and Jochmans (2015), refitting on each unit's temporal
+halves.
+
+```{r jackknife}
+short <- do.call(rbind, lapply(1:30, function(i) {
+  xx <- rnorm(8); NN <- pmax(round(exp(1.0 + rnorm(1, 0, 0.4) + 0.3 * xx) / 0.5), 1)
+  data.frame(unit = i, x = xx, y = rbinom(8, NN, 0.5))
+}))
+ml <- cpb_fe(y ~ x, data = short, fe = "unit")
+jk <- cpb_fe(y ~ x, data = short, fe = "unit", bias_correct = "jackknife")
+c(ml = ml$alpha, jackknife = jk$alpha)   # truth is 0.5; ML is biased downward
+```
+
+The correction is only valid when the two half-panels estimate the same
+parameter (the method's time-homogeneity requirement), so it carries a
+validity gate: the panel is also split cross-sectionally by units -- a placebo
+that is exchangeable under any time pattern -- and if the temporal halves
+disagree beyond that placebo noise, the correction is *refused* with a warning
+naming the failed assumption and the maximum-likelihood fit is returned. On a
+trending or regime-changing panel, the refusal is the correct answer. The gate
+is deliberately powered over sized: in calibration it refuses about 9% of
+genuinely homogeneous panels (you keep the ordinary ML fit) while catching 98%
+of dispersion regime changes and all smooth unmodeled trends.
+
+## Simulated-residual diagnostics with DHARMa
+
+Every fitted model in the package has a `simulate()` method, so the whole
+family plugs into `DHARMa`'s simulated-residual diagnostics.
+
+```{r dharma, eval = requireNamespace("DHARMa", quietly = TRUE)}
+sims <- simulate(h, nsim = 100, seed = 1)
+res <- DHARMa::createDHARMa(simulatedResponse = as.matrix(sims),
+                            observedResponse  = dh$y,
+                            fittedPredictedResponse = fitted(h),
+                            integerResponse = TRUE)
+plot(res)
+```
