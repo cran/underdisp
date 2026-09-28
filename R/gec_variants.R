@@ -26,6 +26,9 @@
 #'   cluster bootstrap.
 #' @param se Intensity inference: `"none"` (default) or `"bootstrap"`.
 #' @param B Bootstrap resamples.
+#' @param weights Optional frequency weights (a numeric vector or a column name),
+#'   applied to both margins; see [cpb()].
+#' @param cores Worker processes for the intensity bootstrap; see [cpb()].
 #' @param max.support Guard on the maximum evaluated support.
 #' @return An object of class `"hurdle_gec"`.
 #' @section Limitation:
@@ -43,38 +46,60 @@
 #' @export
 hurdle_gec <- function(formula, data, participation = NULL, part_fe = NULL,
                        link = c("logit", "probit", "cloglog"), offset = NULL, cluster = NULL,
-                       se = c("none", "bootstrap"), B = 500, max.support = 500) {
+                       se = c("none", "bootstrap"), B = 500, weights = NULL, cores = 1L, max.support = 500) {
+  .ud_no_formula_offset(formula, participation)
+  data <- .ud_drop_na_fe(data, list(part_fe))
+  offset <- .ud_align_vec(offset, data); weights <- .ud_align_vec(weights, data); cluster <- .ud_align_vec(cluster, data)
   se <- match.arg(se); link <- match.arg(link)
+  mv <- unique(c(all.vars(formula), all.vars(if (is.null(participation)) formula[-2L] else participation), part_fe))
+  keep <- stats::complete.cases(data[, intersect(mv, names(data)), drop = FALSE])
+  cl_vals <- .ud_cluster_values(cluster, data, keep)           # checked before the rows are reduced
+  if (!all(keep)) {
+    if (!is.null(offset) && !is.character(offset)) offset <- offset[keep]
+    if (!is.null(weights) && !is.character(weights)) weights <- weights[keep]
+    data <- data[keep, , drop = FALSE]
+  }
   y <- stats::model.response(stats::model.frame(formula, data))
+  if (!is.numeric(y)) stop("Response must be a numeric count; got ", class(y)[1L], ".")
   if (any(y < 0) || any(y != floor(y))) stop("The response must be nonnegative integer counts.")
+  .ud_warn_all_zero(y)
   d <- as.integer(y > 0)
   int_offset <- if (is.null(offset)) NULL
                 else if (is.character(offset) && length(offset) == 1L) offset else offset[y > 0]
   if (!is.null(cluster) && !(is.character(cluster) && length(cluster) == 1L)) {
-    data[[".cluster"]] <- cluster; cluster <- ".cluster"
+    data[[".cluster"]] <- cl_vals; cluster <- ".cluster"
   }
+  if (!is.null(weights) && !(is.character(weights) && length(weights) == 1L)) {
+    if (length(weights) != nrow(data)) stop("'weights' must have one value per row of 'data'.")
+    data[[".hw"]] <- as.numeric(weights); weights <- ".hw"
+  }
+  w_all <- .ud_weights(weights, data, seq_len(nrow(data)))
   prhs <- if (is.null(participation)) formula[-2L] else participation
   if (!is.null(part_fe))
     prhs <- stats::reformulate(c(labels(stats::terms(prhs)), paste0("factor(", part_fe, ")")))
-  pdata <- data; pdata[[".d"]] <- d
-  pfit <- stats::glm(stats::update(prhs, .d ~ .), data = pdata, family = stats::binomial(link = link))
+  pdata <- data; pdata[[".d"]] <- d; pdata[[".w"]] <- if (is.null(w_all)) rep(1, nrow(data)) else w_all
+  pfit <- stats::glm(stats::update(prhs, .d ~ .), data = pdata, weights = .w,
+                     family = stats::binomial(link = link))
 
   ## For within-unit (fixed-effects) intensity, add factor(unit) to `formula`
   ## (dummies); a concentrated zero-truncated GEC is not currently available.
   pos  <- data[y > 0, , drop = FALSE]
   ifit <- gec(formula, data = pos, truncated = TRUE, se = se, B = B, cluster = cluster,
-              offset = int_offset, max.support = max.support)
+              offset = int_offset, weights = weights, cores = cores, max.support = max.support)
 
   Xall <- stats::model.matrix(stats::delete.response(stats::terms(formula)), data)
   beta <- ifit$coefficients
-  lambda_full <- as.numeric(exp(Xall %*% beta))
-  structure(list(participation = pfit, intensity = ifit, Zpart = stats::model.matrix(pfit),
+  off_all <- if (is.null(offset)) 0 else if (is.character(offset)) as.numeric(data[[offset]]) else as.numeric(offset)
+  lambda_full <- as.numeric(exp(off_all + Xall %*% beta))
+  structure(list(participation = pfit, intensity = ifit,
+                 converged = isTRUE(pfit$converged) && isTRUE(ifit$converged), Zpart = stats::model.matrix(pfit),
                  y = as.integer(y), p_full = as.numeric(stats::fitted(pfit)),
                  lambda_full = lambda_full, delta = ifit$delta, n = length(y), n_participate = sum(d),
-                 int_beta = beta, int_xref = colMeans(Xall), int_fe_ref = 0,
+                 int_beta = beta, int_xref = colMeans(Xall), int_fe_ref = mean(off_all),
                  part_beta = stats::coef(pfit), part_xref = colMeans(stats::model.matrix(pfit)),
                  cluster = if (is.character(cluster)) cluster else NULL, max.support = as.integer(max.support),
                  link = link, part_fe = part_fe,
+                 weights = w_all, nobs_weighted = if (is.null(w_all)) length(y) else sum(w_all),
                  formula = formula, part_formula = participation, call = match.call()),
             class = "hurdle_gec")
 }
@@ -82,7 +107,7 @@ hurdle_gec <- function(formula, data, participation = NULL, part_fe = NULL,
 #' @method print hurdle_gec
 #' @export
 print.hurdle_gec <- function(x, ...) {
-  disp <- if (x$delta < 0.97) "underdispersed" else if (x$delta > 1.03) "overdispersed" else "~ equidispersed"
+  disp <- .gec_direction(x)
   cat("Hurdle Generalized Event Count (Katz family)\n")
   cat("Call:  ", deparse(x$call), "\n", sep = "")
   cat(sprintf("Units: %d (%d participate, %.0f%%)\n", x$n, x$n_participate, 100 * x$n_participate / x$n))
@@ -108,15 +133,16 @@ predict.hurdle_gec <- function(object, newdata = NULL,
                                type = c("response", "participation", "intensity"), ...) {
   type <- match.arg(type)
   if (is.null(newdata)) { p <- object$p_full; lam <- object$lambda_full } else {
-    p <- as.numeric(stats::predict(object$participation, newdata = newdata, type = "response"))
+    p <- .ud_glm_predict(object$participation, newdata)
     Terms <- stats::delete.response(stats::terms(object$formula))
     miss <- setdiff(all.vars(Terms), names(newdata))
     if (length(miss)) stop("'newdata' is missing required variable(s): ", paste(miss, collapse = ", "), ".")
-    lam <- as.numeric(exp(stats::model.matrix(Terms, newdata) %*% object$int_beta))
+    lam <- as.numeric(exp(.ud_newdata_matrix(Terms, newdata, object$intensity$levels, object$intensity$contrasts, names(object$int_beta)) %*% object$int_beta))
   }
+  bad <- is.na(lam) | is.na(p); lam[bad] <- 1                 # a missing covariate predicts NA
   p0    <- gec_pmf_cpp(lam, object$delta, 0L, object$max.support)[, 1]
-  tmean <- lam / pmax(1 - p0, 1e-8)                     # E(Y | Y > 0) for the Katz intensity
-  switch(type, participation = p, intensity = tmean, response = p * tmean)
+  tmean <- gec_mean_cpp(lam, object$delta, object$max.support) / pmax(1 - p0, 1e-8)   # exact E(Y | Y > 0)
+  .ud_mask(as.numeric(switch(type, participation = p, intensity = tmean, response = p * tmean)), bad)
 }
 
 #' @method logLik hurdle_gec
@@ -124,12 +150,12 @@ predict.hurdle_gec <- function(object, newdata = NULL,
 logLik.hurdle_gec <- function(object, ...) {
   ll <- as.numeric(stats::logLik(object$participation)) + object$intensity$loglik
   df <- length(stats::coef(object$participation)) + object$intensity$df
-  attr(ll, "df") <- df; attr(ll, "nobs") <- object$n; class(ll) <- "logLik"; ll
+  attr(ll, "df") <- df; attr(ll, "nobs") <- nobs(object); class(ll) <- "logLik"; ll
 }
 
 #' @method nobs hurdle_gec
 #' @export
-nobs.hurdle_gec <- function(object, ...) object$n
+nobs.hurdle_gec <- function(object, ...) if (is.null(object$nobs_weighted)) object$n else object$nobs_weighted
 
 
 #' Zero-inflated GEC (Katz-family) regression
@@ -153,6 +179,9 @@ nobs.hurdle_gec <- function(object, ...) object$n
 #' @param offset Optional exposure offset (log scale) for the count component:
 #'   a numeric vector or the name of a column in `data`; the bootstrap carries
 #'   it through every replicate.
+#' @param weights Optional frequency weights (a numeric vector or a column name);
+#'   see [cpb()].
+#' @param cores Worker processes for the bootstrap; see [cpb()].
 #' @param maxit,tol Optimizer controls.
 #' @return An object of class `"zi_gec"`.
 #' @examples
@@ -164,50 +193,79 @@ nobs.hurdle_gec <- function(object, ...) object$n
 #' @seealso [zi_cpb()], [gec()], [hurdle_gec()]
 #' @export
 zi_gec <- function(formula, data, zero = NULL, zero_fe = NULL, se = c("none", "bootstrap"), B = 500,
-                   cluster = NULL, max.support = 500, maxit = 200, tol = 1e-6, offset = NULL) {
+                   cluster = NULL, max.support = 500, maxit = 200, tol = 1e-6, offset = NULL,
+                   weights = NULL, cores = 1L) {
+  .ud_no_formula_offset(formula, zero)
+  data <- .ud_drop_na_fe(data, list(zero_fe))
+  offset <- .ud_align_vec(offset, data); weights <- .ud_align_vec(weights, data); cluster <- .ud_align_vec(cluster, data)
   se <- match.arg(se); cl <- match.call()
+  .ud_check_whole(max.support, "max.support")
+  if (se == "bootstrap") .ud_check_whole(B, "B", lower = 2)
   if (!is.null(offset) && !(is.character(offset) && length(offset) == 1L)) {
+    if (length(offset) != nrow(data)) stop("'offset' must have one value per row of 'data'.")
     data[[".zi_off"]] <- as.numeric(offset); offset <- ".zi_off"    # vector -> column, subsets with data
   }
+  if (!is.null(weights) && !(is.character(weights) && length(weights) == 1L)) {
+    if (length(weights) != nrow(data)) stop("'weights' must have one value per row of 'data'.")
+    data[[".zi_w"]] <- as.numeric(weights); weights <- ".zi_w"
+  }
+  if (!is.null(cluster) && se != "bootstrap")
+    warning("'cluster' only affects the bootstrap; it is ignored with se = \"none\" (use se = \"bootstrap\").")
+  zrhs0 <- if (is.null(zero)) formula[-2L] else zero
+  mv <- unique(c(all.vars(formula), all.vars(zrhs0), zero_fe, offset, weights))
+  keep <- stats::complete.cases(data[, intersect(mv, names(data)), drop = FALSE])
+  cl_vals <- .ud_cluster_values(cluster, data, keep)           # checked before the rows are reduced
+  if (!is.null(cluster) && !(is.character(cluster) && length(cluster) == 1L)) cluster <- cl_vals
+  data <- data[keep, , drop = FALSE]
   fitfun <- function(dat) {
-    mf <- stats::model.frame(formula, dat)
-    y  <- as.integer(stats::model.response(mf))
-    if (any(y < 0)) stop("The response must be nonnegative integer counts.")
-    X  <- stats::model.matrix(formula, dat)
-    off <- if (is.null(offset)) rep(0, nrow(X))
-           else as.numeric(dat[[offset]][match(rownames(mf), rownames(dat))])
-    if (anyNA(off)) stop("'offset' has missing values on the estimation rows.")
-    zrhs <- if (is.null(zero)) formula[-2L] else zero
+    mf <- stats::model.frame(formula, dat, drop.unused.levels = TRUE)
+    y  <- stats::model.response(mf)
+    if (!is.numeric(y)) stop("Response must be a numeric count; got ", class(y)[1L], ".")
+    if (any(y < 0) || any(y != floor(y))) stop("The response must be nonnegative integer counts.")
+    .ud_warn_all_zero(y)
+    y  <- as.integer(y)
+    X  <- stats::model.matrix(formula, dat); .ud_rank_check(X, "count design")
+    off <- if (is.null(offset)) rep(0, nrow(X)) else as.numeric(dat[[offset]])
+    w   <- .ud_w1(.ud_weights(weights, dat, seq_len(nrow(dat))), nrow(X))
+    zrhs <- zrhs0
     if (!is.null(zero_fe))                                        # fixed effects in the zero equation
       zrhs <- stats::reformulate(c(labels(stats::terms(zrhs)), paste0("factor(", zero_fe, ")")))
-    Zt <- stats::terms(stats::update(zrhs, ~ .)); Z <- stats::model.matrix(Zt, dat)
+    Zt <- stats::terms(stats::update(zrhs, ~ .)); Z <- stats::model.matrix(Zt, dat); .ud_rank_check(Z, "zero design")
     n  <- length(y); is0 <- y == 0; ms <- as.integer(max.support)
     pb <- ncol(X); pg <- ncol(Z)
-    pf <- tryCatch(gec(formula, dat, se = "none", max.support = max.support,
-                       offset = if (is.null(offset)) NULL else offset),
+    pf <- tryCatch(.ud_quiet_guard(gec(formula, dat, se = "none", max.support = max.support,
+                                       offset = if (is.null(offset)) NULL else offset, weights = weights)),
                    error = function(e) NULL)
     b0 <- if (!is.null(pf)) as.numeric(pf$coefficients)
           else { v <- stats::glm.fit(X, y, offset = off, family = stats::poisson())$coefficients
                  v[!is.finite(v)] <- 0; v }
     d0 <- if (!is.null(pf)) pf$delta else 0.8
-    g0 <- suppressWarnings(stats::glm.fit(Z, as.numeric(is0), family = stats::binomial())$coefficients)
+    g0 <- suppressWarnings(stats::glm.fit(Z, as.numeric(is0), weights = w, family = stats::binomial())$coefficients)
     g0[!is.finite(g0)] <- 0
     nll <- function(par) {
       m   <- gec_lp0_cpp(par[1:(pb + 1)], X, y, off, ms)
       pit <- as.numeric(stats::plogis(Z %*% par[(pb + 2):(pb + 1 + pg)]))
-      -sum(ifelse(is0, log(pit + (1 - pit) * m[, 2]), log(1 - pit) + pmax(m[, 1], -700)))
+      -sum(w * ifelse(is0, log(pit + (1 - pit) * m[, 2]), log(1 - pit) + pmax(m[, 1], -700)))
     }
+    ## the optimizer works on the covariates of both equations scaled to unit
+    ## (weighted) standard deviation, and the best start is polished by chained
+    ## Nelder-Mead restarts; the coefficients are mapped back at the end
+    sc <- c(.ud_colscale(X, w), 1, .ud_colscale(Z, w))
+    nll_s <- function(v) nll(v / sc)
     best <- NULL
     for (ld0 in unique(c(log(d0), log(0.5), 0, log(1.5)))) {
-      op <- tryCatch(stats::optim(c(b0, ld0, g0), nll, method = "Nelder-Mead",
+      op <- tryCatch(stats::optim(c(b0, ld0, g0) * sc, nll_s, method = "Nelder-Mead",
                                   control = list(maxit = 20L * maxit, reltol = tol)), error = function(e) NULL)
       if (!is.null(op) && (is.null(best) || op$value < best$value)) best <- op
     }
     if (is.null(best)) stop("zi_gec: all optimization starts failed.")
+    best <- .ud_nm_polish(best, nll_s, 20L * maxit, tol)
+    best$par <- best$par / sc
     b <- best$par[1:pb]; delta <- exp(best$par[pb + 1]); g <- best$par[(pb + 2):(pb + 1 + pg)]
     names(b) <- colnames(X); names(g) <- colnames(Z)
     list(b = b, delta = delta, g = g, ll = -best$value, it = as.integer(best$counts[1]),
-         n = n, y = y, X = X, Z = Z, Zt = Zt, pb = pb, pg = pg, off = off)
+         n = n, y = y, X = X, Z = Z, Zt = Zt, pb = pb, pg = pg, off = off, w = w,
+         converged = best$convergence == 0)
   }
   r <- fitfun(data)
   lambda_full <- as.numeric(exp(r$off + r$X %*% r$b))
@@ -217,13 +275,13 @@ zi_gec <- function(formula, data, zero = NULL, zero_fe = NULL, se = c("none", "b
     clid <- if (is.null(cluster)) NULL
             else if (is.character(cluster) && length(cluster) == 1L) data[[cluster]] else cluster
     grp  <- if (!is.null(clid)) split(seq_len(nrow(data)), clid) else NULL
-    boot <- matrix(NA_real_, B, r$pb + 1 + r$pg)
-    for (b in seq_len(B)) {
+    one <- function(b) {
       idx <- if (is.null(grp)) sample.int(nrow(data), nrow(data), replace = TRUE)
              else unlist(grp[sample.int(length(grp), length(grp), replace = TRUE)], use.names = FALSE)
       fb <- tryCatch(fitfun(data[idx, , drop = FALSE]), error = function(e) NULL)
-      if (!is.null(fb)) boot[b, ] <- c(fb$b, log(fb$delta), fb$g)
+      if (!is.null(fb)) c(fb$b, log(fb$delta), fb$g) else rep(NA_real_, r$pb + 1L + r$pg)
     }
+    boot <- do.call(rbind, .ud_lapply(seq_len(B), one, cores))
     ok <- boot[stats::complete.cases(boot), , drop = FALSE]
     if (nrow(ok) >= 2) {
       se.beta <- setNames(apply(ok[, 1:r$pb, drop = FALSE], 2, stats::sd), names(r$b))
@@ -235,9 +293,13 @@ zi_gec <- function(formula, data, zero = NULL, zero_fe = NULL, se = c("none", "b
                  loglik = r$ll, iterations = r$it, df = r$pb + 1L + r$pg, n = r$n, y = r$y,
                  pi_full = as.numeric(stats::plogis(r$Z %*% r$g)), lambda_full = lambda_full,
                  se.beta = se.beta, se.zero = se.zero, boot = boot, X = r$X, Z = r$Z,
+                 weights = if (is.null(weights)) NULL else r$w,
+                 nobs_weighted = if (is.null(weights)) r$n else sum(r$w), converged = r$converged,
                  int_terms = Ti0, zero_terms = r$Zt,
-                 int_xlev = stats::.getXlevels(Ti0, stats::model.frame(Ti0, data)),
-                 zero_xlev = stats::.getXlevels(r$Zt, stats::model.frame(r$Zt, data)),
+                 int_xlev = stats::.getXlevels(Ti0, stats::model.frame(Ti0, data, drop.unused.levels = TRUE)),
+                 zero_xlev = stats::.getXlevels(r$Zt, stats::model.frame(r$Zt, data, drop.unused.levels = TRUE)),
+                 int_contrasts = attr(stats::model.matrix(Ti0, data), "contrasts"),
+                 zero_contrasts = attr(stats::model.matrix(r$Zt, data), "contrasts"),
                  max.support = as.integer(max.support), formula = formula, zero_formula = zero,
                  call = cl), class = "zi_gec")
 }
@@ -245,7 +307,7 @@ zi_gec <- function(formula, data, zero = NULL, zero_fe = NULL, se = c("none", "b
 #' @method print zi_gec
 #' @export
 print.zi_gec <- function(x, ...) {
-  disp <- if (x$delta < 0.97) "underdispersed" else if (x$delta > 1.03) "overdispersed" else "~ equidispersed"
+  disp <- .gec_direction(x)
   cat("Zero-Inflated Generalized Event Count (Katz family)\n")
   cat("Call:  ", deparse(x$call), "\n", sep = "")
   cat(sprintf("N: %d   logLik: %.1f\n", x$n, x$loglik))
@@ -254,6 +316,7 @@ print.zi_gec <- function(x, ...) {
   cat("\nZero-inflation (logit link) -- positive coefficients raise P(structural zero), i.e. lower the\nchance of a positive count (the opposite direction from a hurdle participation model):\n")
   print(round(x$zero_coef, 4))
   cat("Mean structural-zero probability:", round(mean(x$pi_full), 3), "\n")
+  if (isFALSE(x$converged)) cat("Note: the optimizer did not report convergence.\n")
   invisible(x)
 }
 
@@ -273,23 +336,24 @@ predict.zi_gec <- function(object, newdata = NULL, type = c("response", "zero", 
     Ti <- stats::delete.response(object$int_terms); Tz <- object$zero_terms
     miss <- setdiff(unique(c(all.vars(Ti), all.vars(Tz))), names(newdata))
     if (length(miss)) stop("'newdata' is missing required variable(s): ", paste(miss, collapse = ", "), ".")
-    lam <- as.numeric(exp(stats::model.matrix(Ti, newdata, xlev = object$int_xlev) %*% object$coefficients))
-    pit <- as.numeric(stats::plogis(stats::model.matrix(Tz, newdata, xlev = object$zero_xlev) %*% object$zero_coef))
+    lam <- as.numeric(exp(.ud_newdata_matrix(Ti, newdata, object$int_xlev, object$int_contrasts, names(object$coefficients)) %*% object$coefficients))
+    pit <- as.numeric(stats::plogis(.ud_newdata_matrix(Tz, newdata, object$zero_xlev, object$zero_contrasts, names(object$zero_coef)) %*% object$zero_coef))
   }
+  bad <- is.na(lam) | is.na(pit); lam[bad] <- 1               # a missing covariate predicts NA
   cmean <- gec_mean_cpp(lam, object$delta, object$max.support)
-  switch(type, zero = pit, intensity = cmean, response = (1 - pit) * cmean)
+  .ud_mask(switch(type, zero = pit, intensity = cmean, response = (1 - pit) * cmean), bad)
 }
 
 #' @method logLik zi_gec
 #' @export
 logLik.zi_gec <- function(object, ...) {
-  ll <- object$loglik; attr(ll, "df") <- object$df; attr(ll, "nobs") <- object$n
+  ll <- object$loglik; attr(ll, "df") <- object$df; attr(ll, "nobs") <- nobs(object)
   class(ll) <- "logLik"; ll
 }
 
 #' @method nobs zi_gec
 #' @export
-nobs.zi_gec <- function(object, ...) object$n
+nobs.zi_gec <- function(object, ...) if (is.null(object$nobs_weighted)) object$n else object$nobs_weighted
 
 #' @method coef zi_gec
 #' @export

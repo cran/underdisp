@@ -1,3 +1,5 @@
+testthat::skip_on_cran()   # validation battery: runs in the package's CI (NOT_CRAN = true), not on CRAN
+
 test_that("parametric-bootstrap threshold is sane and detects underdispersion", {
   set.seed(42)
   n <- 400; x <- rnorm(n)

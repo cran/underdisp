@@ -2,13 +2,15 @@
 ## adversarial re-review (predict recycling, dropped offsets, truncated prob,
 ## zero_fe predict, GEC/FE QoI parity). Each guards a specific fixed bug.
 
+testthat::skip_on_cran()   # validation battery: runs in the package's CI (NOT_CRAN = true), not on CRAN
+
 test_that("predict.hurdle_cpb marginal E(Y) is full-length and not recycled", {
   set.seed(1); n <- 300; x <- rnorm(n); z <- rnorm(n)
   y <- ifelse(rbinom(n, 1, plogis(0.3 + 0.6 * z)) == 1, 0L, 1L + rpois(n, exp(0.6 + 0.4 * x)))
   hc <- hurdle_cpb(y ~ x, data.frame(y = y, x = x, z = z), participation = ~ z, se = "none")
   pm <- predict(hc, type = "response")
   expect_length(pm, n)
-  expect_equal(unname(pm), unname(hc$p_full * hc$lambda_full), tolerance = 1e-9)  # not the recycled short vector
+  expect_equal(unname(pm), unname(hc$p_full * underdisp:::.cpb_ztmean(hc$lambda_full, hc$intensity$alpha)), tolerance = 1e-9)  # not the recycled short vector
 })
 
 test_that("predict.cpb applies the stored offset", {

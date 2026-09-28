@@ -9,8 +9,8 @@
 ##   theta_jack = 2 * theta_full - (theta_half1 + theta_half2) / 2,
 ## which removes the leading 1/T bias term. Validated by the committed
 ## fixed-effects bias Monte Carlo (replication/main_paper/main_fe_bias_mc.R):
-## alpha bias -0.147/-0.096/-0.056/-0.033 at T = 6/10/20/40 falls to
-## -0.038/-0.022/-0.016/-0.009. Within each unit, rows are split in the order
+## alpha bias -0.153/-0.100/-0.057/-0.033 at T = 6/10/20/40 falls to
+## -0.046/-0.024/-0.013/-0.009. Within each unit, rows are split in the order
 ## supplied, which should be temporal order.
 ##
 ## VALIDITY GATE. The jackknife identity requires the two half-panels to

@@ -23,12 +23,18 @@ summary(fit)
 ## ----qoi----------------------------------------------------------------------
 predict(fit, newdata = data.frame(x = c(-1, 0, 1)), type = "response")
 implied_ceiling(fit, newdata = data.frame(x = 0))
+first_difference(fit, "x", from = -1, to = 1)
+
+## ----dtest--------------------------------------------------------------------
+dispersion_test(fit, B = 0)   # asymptotic value; the default is the bootstrap p-value
+dispersion_test(count_reg(y ~ x, data = d, family = "poisson"),
+                method = "auxiliary", alternative = "under")
 
 ## ----boot---------------------------------------------------------------------
-fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 99)
+fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 49)   # a small B keeps the vignette quick
 summary(fit_b)
-irr(fit_b)             # incidence-rate ratios with percentile intervals
-alpha_confint(fit_b)   # profile-likelihood interval for alpha
+irr(fit_b)             # rate ratios with percentile intervals
+confint(fit_b)         # coefficients (percentile) and alpha (first-order profile likelihood)
 
 ## ----gec----------------------------------------------------------------------
 gec(y ~ x, data = d, se = "none")                                  # delta ~ 0.5
@@ -36,23 +42,36 @@ gec(y ~ x, data = data.frame(y = rpois(n, exp(1 + 0.4 * x)), x = x),
     se = "none")                                                   # delta ~ 1
 
 ## ----fe-----------------------------------------------------------------------
-panel <- do.call(rbind, lapply(1:50, function(i) {
+panel <- do.call(rbind, lapply(1:30, function(i) {
   xx <- rnorm(12); NN <- pmax(round(exp(rnorm(1, 0, 0.4) + 0.4 * xx) / 0.5), 1)
   data.frame(unit = i, x = xx, y = rbinom(12, NN, 0.5))
 }))
-cpb_fe(y ~ x, data = panel, fe = "unit")
+fe_fit <- cpb_fe(y ~ x, data = panel, fe = "unit")
+fe_fit
+dispersion_test(fe_fit, B = 0)   # the statistic against a Poisson with the same unit effects
+
+## ----fe-boot, eval = FALSE----------------------------------------------------
+# dispersion_test(fe_fit, cores = 2)   # parametric-bootstrap p-value, 199 replicates
 
 ## ----family-------------------------------------------------------------------
 compare_dispersion(y ~ x, data = d)$table
 
-## ----matched------------------------------------------------------------------
-cpb_fit <- cpb(y ~ x, data = d, truncated = FALSE, se = "none")
-compare_models(
-  CPB          = cpb_fit,
-  Poisson      = count_reg(y ~ x, data = d, family = "poisson"),
-  NB           = count_reg(y ~ x, data = d, family = "negbin"),
-  `COM-Poisson`= count_reg(y ~ x, data = d, family = "compois")
+## ----wider--------------------------------------------------------------------
+dw <- d[1:150, ]                         # part of the sample keeps the seven fits quick
+fits <- list(
+  CPB          = cpb(y ~ x, data = dw, truncated = FALSE, se = "none"),
+  Poisson      = count_reg(y ~ x, data = dw, family = "poisson"),
+  NB           = count_reg(y ~ x, data = dw, family = "negbin"),
+  `COM-Poisson`= count_reg(y ~ x, data = dw, family = "mpcmp"),
+  GenPoisson   = count_reg(y ~ x, data = dw, family = "genpois"),
+  GammaCount   = count_reg(y ~ x, data = dw, family = "gammacount"),
+  DoublePois   = count_reg(y ~ x, data = dw, family = "doublepois")
 )
+do.call(compare_models, fits)
+
+## ----profile------------------------------------------------------------------
+dispersion_profile(CPB = fits$CPB, NB = fits$NB, GammaCount = fits$GammaCount,
+                   GenPoisson = fits$GenPoisson)
 
 ## ----pkscreen-----------------------------------------------------------------
 data(peacekeeping)
@@ -68,8 +87,13 @@ h <- hurdle_cpb(y ~ x, data = dh, participation = ~ z)
 zi <- zi_cpb(y ~ x, data = dh, zero = ~ z)
 compare_models(hurdle = h, mixture = zi)
 
+## ----weights------------------------------------------------------------------
+w <- sample(1:3, n, TRUE)
+c(weighted = count_reg(y ~ x, data = d, family = "gammacount", weights = w)$loglik,
+  expanded = count_reg(y ~ x, data = d[rep(seq_len(n), w), ], family = "gammacount")$loglik)
+
 ## ----jackknife----------------------------------------------------------------
-short <- do.call(rbind, lapply(1:30, function(i) {
+short <- do.call(rbind, lapply(1:16, function(i) {
   xx <- rnorm(8); NN <- pmax(round(exp(1.0 + rnorm(1, 0, 0.4) + 0.3 * xx) / 0.5), 1)
   data.frame(unit = i, x = xx, y = rbinom(8, NN, 0.5))
 }))

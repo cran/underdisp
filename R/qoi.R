@@ -25,8 +25,11 @@
 #' @param object A `"cpb"` object.
 #' @param newdata Optional data frame of new covariate profiles; if omitted, the
 #'   fitted data are used.
-#' @param type One of `"response"` (the mean lambda), `"link"` (the linear
-#'   predictor), `"ceiling"` (the implied ceiling lambda/(1-alpha)), or `"prob"`
+#' @param type One of `"response"` (the exact mean of the fitted distribution;
+#'   for a zero-truncated fit the conditional mean E(Y | Y >= 1)), `"rate"`
+#'   (the CPB rate parameter lambda = exp(x'b), which equals the mean only when
+#'   lambda/(1-alpha) is an integer), `"link"` (the linear predictor, log
+#'   lambda), `"ceiling"` (the implied ceiling lambda/(1-alpha)), or `"prob"`
 #'   (the probability that `Y` equals `at`).
 #' @param at For `type = "prob"`, the count value(s) `y` whose probability is
 #'   returned (length 1, or one per row of the prediction data).
@@ -44,7 +47,7 @@
 #' @method predict cpb
 #' @export
 predict.cpb <- function(object, newdata = NULL,
-                        type = c("response", "link", "ceiling", "prob"), at = NULL,
+                        type = c("response", "rate", "link", "ceiling", "prob"), at = NULL,
                         offset = NULL, ...) {
   type <- match.arg(type)
   if (is.null(newdata)) {
@@ -56,15 +59,17 @@ predict.cpb <- function(object, newdata = NULL,
     if (length(miss))
       stop("'newdata' is missing required variable(s): ", paste(miss, collapse = ", "),
            ". Supply every predictor in the model.")
-    mf <- model.frame(Terms, newdata, xlev = object$levels)
-    X  <- model.matrix(Terms, mf, contrasts.arg = object$contrasts)
+    X  <- .ud_newdata_matrix(Terms, newdata, object$levels, object$contrasts, names(object$coefficients))
     off <- if (is.null(offset)) rep_len(0, nrow(X))
            else as.numeric(if (is.character(offset) && length(offset) == 1L) newdata[[offset]] else offset)
   }
+  bad <- if (is.null(newdata)) FALSE else .ud_na_rows(X, off)     # a missing covariate or offset predicts NA
+  if (any(bad)) { X[bad, ] <- 0; off[bad] <- 0 }
   eta <- as.numeric(off + X %*% object$coefficients); lam <- exp(eta)
-  switch(type,
+  out <- switch(type,
     link     = eta,
-    response = lam,
+    rate     = lam,
+    response = .cpb_mean(lam, object$alpha, isTRUE(object$truncated)),
     ceiling  = lam / (1 - object$alpha),
     prob = {
       if (is.null(at)) stop("For type = \"prob\", supply 'at' (the count value y).")
@@ -72,14 +77,18 @@ predict.cpb <- function(object, newdata = NULL,
       if (length(yv) != length(lam)) stop("'at' must be length 1 or nrow(newdata).")
       .cpb_prob_at(lam, object$alpha, yv, object$truncated, object$max.support)
     })
+  .ud_mask(out, bad)
 }
 
 #' Implied ceiling with a profile-likelihood interval
 #'
-#' Returns the observation- (or profile-) specific ceiling lambda/(1-alpha), with an
-#' interval propagating the profile-likelihood uncertainty in `alpha` at the fitted
-#' mean. (Coefficient uncertainty in lambda is not propagated here; use
-#' [first_difference()] with `quantity = "ceiling"` for a fully bootstrapped contrast.)
+#' Returns the observation- (or profile-) specific ceiling lambda/(1-alpha), with
+#' bounds that carry the limits of the interval for `alpha` (see [alpha_confint()];
+#' calibrated when the fit went through [calibrate_alpha()]) to the ceiling at the
+#' fitted rate. The rate is held at its estimate: coefficient uncertainty in lambda
+#' is not propagated, so the bounds are not a confidence interval for the ceiling;
+#' use [first_difference()] with `quantity = "ceiling"` for a fully bootstrapped
+#' contrast.
 #'
 #' @param object A `"cpb"` object.
 #' @param newdata Optional covariate profiles.
@@ -98,8 +107,8 @@ implied_ceiling <- function(object, ...) UseMethod("implied_ceiling")
 #' @method implied_ceiling cpb
 #' @export
 implied_ceiling.cpb <- function(object, newdata = NULL, level = 0.95, ...) {
-  lam <- predict(object, newdata = newdata, type = "response")
-  aci <- .cpb_alpha_profile_ci(object, level = level)
+  lam <- predict(object, newdata = newdata, type = "rate")
+  aci <- .cpb_alpha_ci(object, level = level)
   data.frame(lambda  = lam,
              ceiling = lam / (1 - object$alpha),
              lower   = lam / (1 - aci["lower"]),
@@ -107,28 +116,51 @@ implied_ceiling.cpb <- function(object, newdata = NULL, level = 0.95, ...) {
              row.names = NULL)
 }
 
+#' @rdname implied_ceiling
+#' @method implied_ceiling cpb_fe
+#' @export
+implied_ceiling.cpb_fe <- function(object, newdata = NULL, level = 0.95, ...) {
+  ## the concentrated fit has no profile interval for alpha (the profile would
+  ## re-concentrate every unit effect at each alpha); the ceiling is reported
+  ## at the point estimate, at the average unit for newdata
+  lam <- predict(object, newdata = newdata, type = "rate")
+  data.frame(lambda = lam, ceiling = lam / (1 - object$alpha), row.names = NULL)
+}
+
 #' Profile-likelihood interval for the dispersion parameter alpha
+#'
+#' The interval inverts the likelihood-ratio test of `alpha`, re-maximizing the
+#' coefficients at each value. By default the cut is the chi-square one (a
+#' first-order interval); it covers about 0.90 to 0.94 in simulations from the
+#' CPB, with nearly all misses on the upper side, because the estimate of
+#' `alpha` is biased toward zero ([calibrate_alpha()] explains the mechanism).
+#' A fit that went through [calibrate_alpha()] gets the interval calibrated by
+#' parametric bootstrap instead. Either interval is model-based: it assumes the
+#' CPB and independent observations.
 #'
 #' @param object A `"cpb"` object.
 #' @param level Confidence level (default 0.95).
 #' @return A length-2 numeric vector (`lower`, `upper`) with attributes `alpha` (the
-#'   point estimate) and `boundary` (`TRUE` if the lower bound is at the feasibility
-#'   boundary, i.e. strong underdispersion, where the interval is one-sided).
+#'   point estimate), `method` (first-order or calibrated) and `boundary` (`TRUE`
+#'   when the profile has not fallen to the cut by `alpha = 0.005`, so that the
+#'   lower limit is the parameter bound).
 #' @examples
-#' set.seed(7); x <- rnorm(300)
-#' N <- pmax(round(exp(1.5 + 0.4 * x) / 0.5), 1); y <- rbinom(300, N, 0.5)
+#' set.seed(7); x <- rnorm(200)
+#' N <- pmax(round(exp(1.5 + 0.4 * x) / 0.5), 1); y <- rbinom(200, N, 0.5)
 #' fit <- cpb(y ~ x, data.frame(y = y, x = x)[y > 0, ], se = "none")
 #' alpha_confint(fit)
 #' @export
 alpha_confint <- function(object, level = 0.95) {
-  aci <- .cpb_alpha_profile_ci(object, level = level)
-  structure(aci[c("lower", "upper")], alpha = object$alpha,
-            boundary = aci["boundary"] == 1)
+  aci <- .cpb_alpha_ci(object, level = level)
+  structure(aci[c("lower", "upper")], alpha = object$alpha, method = attr(aci, "method"),
+            boundary = aci[["boundary"]] == 1)
 }
 
 #' Incidence rate ratios for a CPB fit
 #'
-#' @param object A `"cpb"` object fit with `se = "bootstrap"`.
+#' @param object A `"cpb"` object. With `se = "bootstrap"` at fit time the
+#'   ratios carry bootstrap percentile intervals; otherwise point estimates are
+#'   returned with `method = "none"`, as for every other `irr()` method.
 #' @param level Confidence level (default 0.95).
 #' @return A `"ud_irr"` data frame -- the package-wide rate-ratio contract
 #'   (columns `term`, `equation`, `ratio`, `estimate`, `lower`, `upper`,
@@ -137,9 +169,9 @@ alpha_confint <- function(object, level = 0.95) {
 #' @param ... Further arguments passed to methods.
 #' @examples
 #' \donttest{
-#' set.seed(8); x <- rnorm(300)
-#' N <- pmax(round(exp(1.5 + 0.4 * x) / 0.5), 1); y <- rbinom(300, N, 0.5)
-#' fit <- cpb(y ~ x, data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 100)
+#' set.seed(8); x <- rnorm(200)
+#' N <- pmax(round(exp(1.5 + 0.4 * x) / 0.5), 1); y <- rbinom(200, N, 0.5)
+#' fit <- cpb(y ~ x, data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 40)
 #' irr(fit)
 #' }
 #' @export
@@ -149,7 +181,8 @@ irr <- function(object, ...) UseMethod("irr")
 #' @method irr cpb
 #' @export
 irr.cpb <- function(object, level = 0.95, ...) {
-  if (is.null(object$boot)) stop("Bootstrap required; refit with se = \"bootstrap\".")
+  if (is.null(object$boot))
+    return(.ud_irr_wald(object$coefficients, NULL, level, "count", "IRR"))
   ok <- object$boot[complete.cases(object$boot), , drop = FALSE]
   a  <- (1 - level) / 2
   ci <- t(apply(ok[, 1:object$p, drop = FALSE], 2, function(col) quantile(exp(col), c(a, 1 - a))))
@@ -158,16 +191,19 @@ irr.cpb <- function(object, level = 0.95, ...) {
           method = "bootstrap (stored)")
 }
 
-#' King-style first difference for a CPB fit
+#' First difference for a CPB fit
 #'
 #' The effect on a quantity of interest of moving one covariate `from` one value `to`
-#' another, holding the other covariates at their means, with a bootstrap percentile
-#' interval (Tomz, Wittenberg & King style, using the model's bootstrap draws).
+#' another, holding the other covariates at their means, with a percentile
+#' interval from the model's bootstrap draws when the fit carries them.
 #'
-#' @param object A `"cpb"` object fit with `se = "bootstrap"`.
+#' @param object A `"cpb"` object. With `se = "bootstrap"` at fit time the
+#'   difference carries a bootstrap percentile interval; otherwise the point
+#'   estimate is returned with `method = "none"`.
 #' @param variable Name of a model-matrix column to vary.
 #' @param from,to The two values of `variable` to contrast.
-#' @param quantity `"mean"` (E(Y)), `"ceiling"` (lambda/(1-alpha)), or `"prob"`
+#' @param quantity `"mean"` (E(Y); for a zero-truncated fit the conditional
+#'   mean E(Y | Y >= 1)), `"ceiling"` (lambda/(1-alpha)), or `"prob"`
 #'   (P(Y = `y`)).
 #' @param y The count value for `quantity = "prob"`.
 #' @param level Confidence level (default 0.95).
@@ -179,9 +215,9 @@ irr.cpb <- function(object, level = 0.95, ...) {
 #' @param ... Further arguments passed to methods; unknown arguments error.
 #' @examples
 #' \donttest{
-#' set.seed(1); x <- rnorm(400)
-#' N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1); y <- rbinom(400, N, 0.5)
-#' fit <- cpb(y ~ x, data = data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 200)
+#' set.seed(1); x <- rnorm(250)
+#' N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1); y <- rbinom(250, N, 0.5)
+#' fit <- cpb(y ~ x, data = data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 60)
 #' first_difference(fit, "x", from = -1, to = 1, quantity = "mean")
 #' }
 #' @export
@@ -194,15 +230,16 @@ first_difference.cpb <- function(object, variable, from, to,
                              quantity = c("mean", "ceiling", "prob"), y = NULL,
                              level = 0.95, ...) {
   .fd_dots(...); quantity <- match.arg(quantity)
-  if (is.null(object$boot)) stop("Bootstrap draws required; refit with se = \"bootstrap\".")
   if (!variable %in% colnames(object$X))
     stop("'variable' must name a model-matrix column: ",
          paste(colnames(object$X), collapse = ", "))
+  .fd_check_terms(variable, colnames(object$X))
+  off <- if (is.null(object$offset)) 0 else mean(object$offset)   # offset held at its mean
   x0 <- colMeans(object$X); xf <- x0; xt <- x0
   xf[variable] <- from; xt[variable] <- to
   qfun <- function(beta, alpha) {
-    lf <- exp(sum(xf * beta)); lt <- exp(sum(xt * beta))
-    if (quantity == "mean")         c(lf, lt)
+    lf <- exp(off + sum(xf * beta)); lt <- exp(off + sum(xt * beta))
+    if (quantity == "mean")         .cpb_mean(c(lf, lt), alpha, isTRUE(object$truncated))
     else if (quantity == "ceiling") c(lf / (1 - alpha), lt / (1 - alpha))
     else {
       if (is.null(y)) stop("quantity = \"prob\" requires 'y'.")
@@ -211,6 +248,8 @@ first_difference.cpb <- function(object, variable, from, to,
     }
   }
   pt  <- qfun(object$coefficients, object$alpha)
+  if (is.null(object$boot))
+    return(.ud_fd(component = quantity, from = pt[1], to = pt[2]))
   ok  <- object$boot[complete.cases(object$boot), , drop = FALSE]
   fdb <- apply(ok, 1, function(r) { q <- qfun(r[1:object$p], r[object$p + 1]); q[2] - q[1] })
   a   <- (1 - level) / 2

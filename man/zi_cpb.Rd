@@ -17,7 +17,9 @@ zi_cpb(
   max.support = 500,
   maxit = 200,
   tol = 1e-06,
-  offset = NULL
+  offset = NULL,
+  weights = NULL,
+  cores = 1L
 )
 }
 \arguments{
@@ -61,6 +63,11 @@ a numeric vector or the name of a column in \code{data}, making the count a
 rate model. Supported for \code{method = "ml"} without \code{fe} (the fixed-effects
 path's plug-in unit effects have no offset handling yet, and errors
 loudly). The bootstrap carries the offset through every replicate.}
+
+\item{weights}{Optional frequency weights (a numeric vector or a column name);
+see \code{\link[=cpb]{cpb()}}. Supported for \code{method = "ml"}.}
+
+\item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
 An object of class \code{"zi_cpb"}.

@@ -26,7 +26,7 @@ test_that("first_difference decomposes into extensive and intensive margins", {
   ii <- irr(hf)
   expect_s3_class(ii, "ud_irr")
   expect_named(ii, c("term", "equation", "ratio", "estimate", "lower", "upper", "method"))
-  expect_true(all(c("count", "binary") %in% ii$equation))
+  expect_true(all(c("count", "participation") %in% ii$equation))   # 0.1.1 labels the binary stage
   expect_true(all(c("IRR", "OR") %in% ii$ratio))
   ic <- implied_ceiling(hf, newdata = data.frame(x = 0, z = 0))
   expect_true(is.finite(ic$ceiling))

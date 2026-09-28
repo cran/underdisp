@@ -13,15 +13,23 @@ alpha_confint(object, level = 0.95)
 }
 \value{
 A length-2 numeric vector (\code{lower}, \code{upper}) with attributes \code{alpha} (the
-point estimate) and \code{boundary} (\code{TRUE} if the lower bound is at the feasibility
-boundary, i.e. strong underdispersion, where the interval is one-sided).
+point estimate), \code{method} (first-order or calibrated) and \code{boundary} (\code{TRUE}
+when the profile has not fallen to the cut by \code{alpha = 0.005}, so that the
+lower limit is the parameter bound).
 }
 \description{
-Profile-likelihood interval for the dispersion parameter alpha
+The interval inverts the likelihood-ratio test of \code{alpha}, re-maximizing the
+coefficients at each value. By default the cut is the chi-square one (a
+first-order interval); it covers about 0.90 to 0.94 in simulations from the
+CPB, with nearly all misses on the upper side, because the estimate of
+\code{alpha} is biased toward zero (\code{\link[=calibrate_alpha]{calibrate_alpha()}} explains the mechanism).
+A fit that went through \code{\link[=calibrate_alpha]{calibrate_alpha()}} gets the interval calibrated by
+parametric bootstrap instead. Either interval is model-based: it assumes the
+CPB and independent observations.
 }
 \examples{
-set.seed(7); x <- rnorm(300)
-N <- pmax(round(exp(1.5 + 0.4 * x) / 0.5), 1); y <- rbinom(300, N, 0.5)
+set.seed(7); x <- rnorm(200)
+N <- pmax(round(exp(1.5 + 0.4 * x) / 0.5), 1); y <- rbinom(200, N, 0.5)
 fit <- cpb(y ~ x, data.frame(y = y, x = x)[y > 0, ], se = "none")
 alpha_confint(fit)
 }

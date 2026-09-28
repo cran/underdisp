@@ -13,7 +13,8 @@
 }
 \value{
 An object of class \code{"summary.cpb"} with the coefficient table, the
-dispersion parameter and its profile-likelihood interval, the implied ceiling,
+dispersion parameter and its profile-likelihood interval (first-order, or
+calibrated when the fit went through \code{\link[=calibrate_alpha]{calibrate_alpha()}}), the implied ceiling,
 fit statistics, and the likelihood-ratio test against a (zero-truncated) Poisson.
 }
 \description{

@@ -8,7 +8,7 @@
 ## and step-halved on the log-likelihood, this converges where VGAM's IRLS can
 ## stop internally on dummy-heavy designs; a converged fit is the same MLE.
 .ztp_fisher <- function(formula, data_pos, maxit = 200L) {
-  mf <- tryCatch(stats::model.frame(formula, data_pos), error = function(e) NULL)
+  mf <- tryCatch(stats::model.frame(formula, data_pos, drop.unused.levels = TRUE), error = function(e) NULL)
   if (is.null(mf)) return(NULL)
   X <- stats::model.matrix(attr(mf, "terms"), mf)
   y <- as.numeric(stats::model.response(mf))
@@ -86,18 +86,27 @@
 #' ceiling-exceedance diagnostic, and it fits a generalized-Poisson soft-tail
 #' comparator.
 #'
+#' Runtime: the marginal and at-risk arms take seconds. `ztp_threshold = "bootstrap"`
+#' refits the zero-truncated Poisson `ztp_boot_B` times (use `cores`); the CPB
+#' comparator is fit only up to `cpb_max_n` rows, and the generalized-Poisson and
+#' COM-Poisson comparators only when the mean model carries at most
+#' `comp_max_par` parameters and at most `comp_max_n` rows, beyond which their
+#' rows print `NA`; each is a full model fit (the two soft-tail families have no
+#' concentrated fixed-effects path, so a dummy-heavy screen would take minutes).
+#'
 #' @param formula A model formula.
 #' @param data A data frame.
 #' @param run_cpb Logical; fit the CPB when the data are not zero-dominated
 #'   (default `TRUE`).
 #' @param cpb_max_n Skip the CPB fit above this sample size (default 3000).
-#' @param run_gp Logical; fit the generalized-Poisson comparator (default `TRUE`).
+#' @param run_gp Logical; fit the generalized-Poisson comparator (default
+#'   `TRUE`); gated by `comp_max_par` and `comp_max_n` like the COM-Poisson.
 #' @param run_comp Logical; fit the native COM-Poisson comparator (default
 #'   `TRUE`). Skipped when the mean model carries more than `comp_max_par`
 #'   parameters (the COM-Poisson has no concentrated fixed-effects path, so
 #'   dummy-heavy screens would be slow) or when `n` exceeds `comp_max_n`.
 #' @param comp_max_par,comp_max_n Parameter and sample-size gates for the
-#'   COM-Poisson comparator (defaults 30 and 5000).
+#'   generalized-Poisson and COM-Poisson comparators (defaults 30 and 5000).
 #' @param ztp_threshold How to set the at-risk test's underdispersion cutoff.
 #'   `"calibrated"` (default) uses the simulation-calibrated rule
 #'   \eqn{1 - 2.27/\sqrt{n_+}}, whose constant is an estimated standard
@@ -117,10 +126,21 @@
 #'   departures by construction and is the recommended choice in either
 #'   regime.
 #' @param ztp_boot_B Number of parametric-bootstrap replicates (default 199).
+#' @param cores Worker processes for the parametric-bootstrap replicates
+#'   (default 1); see [cpb()].
 #' @param digits Printing precision.
+#' @param nb_boot Whether the NB-vs-Poisson p-value is a parametric bootstrap
+#'   under the fitted Poisson (`ztp_boot_B` replicates over `cores`), the
+#'   package default at a boundary null (see [dispersion_test()]). `NULL`
+#'   (default) bootstraps it when `ztp_threshold = "bootstrap"` and the mean
+#'   model is within `comp_max_par` and `comp_max_n`; otherwise the p-value is
+#'   the asymptotic boundary mixture, which is conservative for this test. The
+#'   bootstrap restores the random-number state, so every other result is the
+#'   same with or without it.
 #' @return An object of class `"ud_screen"` with `verdict_marginal`, `verdict_atrisk`,
 #'   the conditional and at-risk (ZTP-benchmarked) Pearson statistics, the NB-vs-Poisson
-#'   LR test, a log-likelihood comparison, (when fit) the CPB alpha and
+#'   LR test (`p_nb_method` records how its p-value was computed), a log-likelihood
+#'   comparison, (when fit) the CPB alpha and
 #'   ceiling-exceedance share, and the over-conditioning guard state:
 #'   `atrisk_skipped` (`TRUE` when the mean model nearly saturates the positive
 #'   counts, so the at-risk statistic is not computed and the printout says why),
@@ -144,9 +164,10 @@ ud_screen <- function(formula, data, run_cpb = TRUE, cpb_max_n = 3000,
                       run_gp = TRUE, run_comp = TRUE, comp_max_par = 30,
                       comp_max_n = 5000,
                       ztp_threshold = c("calibrated", "bootstrap"),
-                      ztp_boot_B = 199L, digits = 3) {
+                      ztp_boot_B = 199L, cores = 1L, digits = 3, nb_boot = NULL) {
+  .ud_no_formula_offset(formula)
   ztp_threshold <- match.arg(ztp_threshold)
-  mf <- model.frame(formula, data, na.action = na.omit)
+  mf <- model.frame(formula, data, na.action = na.omit, drop.unused.levels = TRUE)
   y  <- model.response(mf)
   if (any(y < 0) || any(y != floor(y)))
     stop("Response must be a non-negative integer count.")
@@ -156,11 +177,44 @@ ud_screen <- function(formula, data, run_cpb = TRUE, cpb_max_n = 3000,
   X <- model.matrix(pois); k <- ncol(X); yv <- pois$y
   dd <- .ud_disp(yv, fitted(pois), k)
   nb <- tryCatch(suppressWarnings(MASS::glm.nb(formula, data = data)), error = function(e) NULL)
-  lr_nb <- if (!is.null(nb)) as.numeric(2 * (logLik(nb) - logLik(pois))) else NA_real_
+  ## the NB nests the Poisson at theta -> Inf, so the LR is at least zero: a
+  ## negative difference is glm.nb() stopping short of that boundary
+  lr_nb <- if (!is.null(nb)) max(as.numeric(2 * (logLik(nb) - logLik(pois))), 0) else NA_real_
   ## boundary-corrected: the NB nests the Poisson at theta -> Inf (a boundary), so
   ## the LR null is the 1/2 chi^2_0 + 1/2 chi^2_1 mixture -- same correction the
   ## alpha-existence test uses (methods.R). Halving keeps the two coherent.
   p_nb  <- if (!is.na(lr_nb)) 0.5 * pchisq(max(lr_nb, 0), df = 1, lower.tail = FALSE) else NA_real_
+  ## In bootstrap mode the NB p-value is a parametric bootstrap under the fitted
+  ## Poisson, the package default at a boundary null (dispersion_test()), when the
+  ## mean model is within the comparator gates; otherwise it is the asymptotic
+  ## mixture above, which is conservative for this test. The bootstrap restores the
+  ## random-number state, so every other result is the same with or without it.
+  p_nb_method <- "asymptotic"; nb_B_ok <- NA_integer_
+  if (is.null(nb_boot)) nb_boot <- identical(ztp_threshold, "bootstrap")
+  if (isTRUE(nb_boot) && is.finite(lr_nb) && k <= comp_max_par && n <= comp_max_n) {
+    had_seed <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+    old_seed <- if (had_seed) get(".Random.seed", envir = globalenv()) else NULL
+    mu0 <- fitted(pois)
+    LRb <- tryCatch(unlist(.ud_lapply(seq_len(ztp_boot_B), function(b) {
+      yb <- stats::rpois(length(mu0), mu0)
+      pf <- tryCatch(stats::glm.fit(X, yb, family = stats::poisson()), error = function(e) NULL)
+      nf <- tryCatch(suppressWarnings(MASS::glm.nb(yb ~ 0 + X)), error = function(e) NULL)
+      if (is.null(pf) || is.null(nf)) return(NA_real_)
+      max(2 * (as.numeric(stats::logLik(nf)) - sum(stats::dpois(yb, pf$fitted.values, log = TRUE))), 0)
+    }, cores), use.names = FALSE),
+    finally = {
+      if (had_seed) assign(".Random.seed", old_seed, envir = globalenv())
+      else if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) rm(".Random.seed", envir = globalenv())
+    })
+    nb_B_ok <- sum(is.finite(LRb))
+    if (nb_B_ok >= 0.8 * ztp_boot_B) {
+      p_nb <- (1 + sum(LRb[is.finite(LRb)] >= lr_nb - 1e-10)) / (1 + nb_B_ok)
+      p_nb_method <- "parametric bootstrap"
+    } else {
+      warning("ud_screen: the NB-vs-Poisson bootstrap failed on ", ztp_boot_B - nb_B_ok, " of ", ztp_boot_B,
+              " replicates; the p-value stays asymptotic.")
+    }
+  }
   verdict_marg <- .ud_verdict_marg(dd, p_nb)
   idx_uncond <- var(yv) / mean(yv); pct_zero <- mean(yv == 0)
 
@@ -176,11 +230,11 @@ ud_screen <- function(formula, data, run_cpb = TRUE, cpb_max_n = 3000,
   ## threshold's size inflates with p/n_+ (the companion paper's App. B drift
   ## result), so the verdict is flagged and the bootstrap threshold recommended.
   atrisk_skipped <- FALSE; overconditioned <- NA; sat_ratio <- NA_real_
-  if (n_pos <= (k + 2)) {
+  if (n_pos <= (k + 2) || n_pos < 10L) {           # too few positives for an at-risk verdict
     atrisk_skipped <- TRUE; overconditioned <- TRUE
     sat_ratio <- k / max(n_pos, 1L)
   }
-  if (n_pos > (k + 2)) {
+  if (!atrisk_skipped) {
     used <- rownames(mf); data_pos <- data[used[pos], , drop = FALSE]
     ztp <- tryCatch(suppressWarnings(VGAM::vglm(formula, family = VGAM::pospoisson, data = data_pos)),
                     error = function(e) NULL)
@@ -237,18 +291,17 @@ ud_screen <- function(formula, data, run_cpb = TRUE, cpb_max_n = 3000,
         ## Parametric bootstrap of the ZTP null at the fitted rates: the exact
         ## finite-sample null of THIS design, so the cutoff carries the
         ## fixed-effects estimation drift that the calibrated rule does not.
-        mfz <- stats::model.frame(formula, data_pos)
+        mfz <- stats::model.frame(formula, data_pos, drop.unused.levels = TRUE)
         Xz  <- stats::model.matrix(attr(mfz, "terms"), mfz)
         p0  <- exp(-lam)
-        Tb  <- rep(NA_real_, ztp_boot_B)
-        for (b in seq_len(ztp_boot_B)) {
+        Tb <- unlist(.ud_lapply(seq_len(ztp_boot_B), function(b) {
           yb <- stats::qpois(p0 + stats::runif(n_pos) * (1 - p0), lam)
           fb <- .ztp_fisher_fit(Xz, yb, maxit = 500L)
-          if (is.null(fb) || !isTRUE(fb$converged)) next
-          if (max(fb$lam) > 20 * max(yb)) next
+          if (is.null(fb) || !isTRUE(fb$converged)) return(NA_real_)
+          if (max(fb$lam) > 20 * max(yb)) return(NA_real_)
           mb <- fb$lam / (1 - exp(-fb$lam)); vb <- mb * (1 + fb$lam - mb)
-          Tb[b] <- sum((yb - mb)^2 / vb) / (n_pos - fb$rank)
-        }
+          sum((yb - mb)^2 / vb) / (n_pos - fb$rank)
+        }, cores), use.names = FALSE)
         n_ok <- sum(is.finite(Tb))
         if (n_ok >= 0.8 * ztp_boot_B) {
           thr    <- as.numeric(stats::quantile(Tb, 0.05, na.rm = TRUE))
@@ -277,10 +330,13 @@ ud_screen <- function(formula, data, run_cpb = TRUE, cpb_max_n = 3000,
     }
   }
   gp_ll <- NA_real_
-  if (run_gp) {
-    gp <- tryCatch(suppressWarnings(VGAM::vglm(formula, family = VGAM::genpoisson0, data = data)),
+  if (run_gp && k <= comp_max_par && n <= comp_max_n) {
+    ## the package's own generalized Poisson, whose dispersion may be negative
+    ## (an overdispersion-only GP would report the Poisson fit on underdispersed
+    ## data); gated like the COM-Poisson, since it is a full numerical-gradient fit
+    gp <- tryCatch(suppressWarnings(count_reg(formula, data = data, family = "genpois", se = "none")),
                    error = function(e) NULL)
-    if (!is.null(gp)) gp_ll <- tryCatch(as.numeric(VGAM::logLik(gp)), error = function(e) NA_real_)
+    if (!is.null(gp) && is.finite(gp$loglik)) gp_ll <- gp$loglik
   }
   ## native COM-Poisson comparator (soft tail); gated because it has no
   ## concentrated fixed-effects path and the normalizing constant is per-obs work
@@ -297,7 +353,7 @@ ud_screen <- function(formula, data, run_cpb = TRUE, cpb_max_n = 3000,
     idx_uncond = idx_uncond, pct_zero = pct_zero, mean = mean(yv), max = max(yv),
     dd = dd, pearson_ztp = pearson_ztp, ztp_threshold = thr, ztp_threshold_hi = thr_hi,
     ztp_threshold_method = ztp_threshold, ztp_ll = ztp_ll,
-    lr_nb = lr_nb, p_nb = p_nb,
+    lr_nb = lr_nb, p_nb = p_nb, p_nb_method = p_nb_method, nb_boot_B_ok = nb_B_ok,
     overconditioned = overconditioned, sat_ratio = sat_ratio,
     atrisk_skipped = atrisk_skipped,
     ll = c(Poisson = as.numeric(logLik(pois)),
@@ -319,9 +375,14 @@ print.ud_screen <- function(x, ...) {
   cat("\nMARGINAL verdict:", x$verdict_marginal, "\n")
   cat(sprintf("   Pearson=%.3f  prop.slope=%.3f (p=%s)\n", x$dd$pearson, x$dd$slope,
               format.pval(x$dd$p, digits = 2)))
-  if (!is.na(x$p_nb))
-    cat("   NB vs Poisson LR =", round(x$lr_nb, 2), "(p=", format.pval(x$p_nb, digits = 2),
-        "; sig => overdispersion)\n")
+  if (!is.na(x$p_nb)) {
+    how <- if (identical(x$p_nb_method, "parametric bootstrap")) "by parametric bootstrap"
+           else "asymptotic, conservative at this boundary"
+    if (round(x$lr_nb, 2) > 0)
+      cat("   NB vs Poisson LR =", round(x$lr_nb, 2), "(p=", format.pval(x$p_nb, digits = 2), how,
+          "; sig => overdispersion)\n")
+    else cat("   NB vs Poisson LR = 0, at the Poisson boundary (p=", format.pval(x$p_nb, digits = 2), how, ")\n")
+  }
   if (isTRUE(x$atrisk_skipped))
     cat(sprintf("\nAT-RISK screen SKIPPED -- over-conditioning: the mean model (nearly)\nsaturates the positive counts (%d parameters vs n_pos = %d); any within-unit\ntightness at this saturation would be manufactured by the specification,\nnot measured.\n",
                 as.integer(round(x$sat_ratio * max(x$n_pos, 1L))), x$n_pos))

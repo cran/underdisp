@@ -14,6 +14,8 @@ hurdle_gec(
   cluster = NULL,
   se = c("none", "bootstrap"),
   B = 500,
+  weights = NULL,
+  cores = 1L,
   max.support = 500
 )
 }
@@ -40,6 +42,11 @@ cluster bootstrap.}
 \item{se}{Intensity inference: \code{"none"} (default) or \code{"bootstrap"}.}
 
 \item{B}{Bootstrap resamples.}
+
+\item{weights}{Optional frequency weights (a numeric vector or a column name),
+applied to both margins; see \code{\link[=cpb]{cpb()}}.}
+
+\item{cores}{Worker processes for the intensity bootstrap; see \code{\link[=cpb]{cpb()}}.}
 
 \item{max.support}{Guard on the maximum evaluated support.}
 }

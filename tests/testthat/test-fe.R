@@ -1,4 +1,5 @@
 test_that("cpb_fe recovers coefficients with high-dimensional fixed effects", {
+  skip_on_cran()                                  # heavy: runs in CI and locally, not on CRAN's clock
   set.seed(3)
   d <- do.call(rbind, lapply(1:80, function(i) {
     x <- rnorm(15)
@@ -12,6 +13,19 @@ test_that("cpb_fe recovers coefficients with high-dimensional fixed effects", {
   expect_true(fit$alpha > 0 && fit$alpha < 1)
   expect_identical(fit$n_units, 80L)
   expect_length(fit$fe, 80L)
+})
+
+test_that("cpb_fe fits a small panel (the smoke test CRAN runs)", {
+  set.seed(4)
+  d <- do.call(rbind, lapply(1:12, function(i) {
+    x <- rnorm(8)
+    N <- pmax(round(exp(rnorm(1, 0.8, 0.3) + 0.5 * x) / 0.5), 1)
+    data.frame(unit = i, x = x, y = rbinom(8, N, 0.5))
+  }))
+  fit <- cpb_fe(y ~ x, data = d, fe = "unit")
+  expect_s3_class(fit, "cpb_fe")
+  expect_true(is.finite(fit$loglik) && fit$alpha > 0 && fit$alpha < 1)
+  expect_identical(fit$n_units, 12L)
 })
 
 test_that("cpb_fe requires a covariate and a valid fe column", {

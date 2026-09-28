@@ -2,20 +2,21 @@
 % Please edit documentation in R/glm_families.R
 \name{hurdle_count}
 \alias{hurdle_count}
-\title{Hurdle Poisson / negative-binomial regression (matched CPB baseline)}
+\title{Hurdle count regression for the matched count families}
 \usage{
 hurdle_count(
   formula,
   data,
-  family = c("poisson", "negbin", "compois"),
+  family = c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount",
+    "doublepois"),
   participation = NULL,
   fe = NULL,
   part_fe = NULL,
   link = c("logit", "probit", "cloglog"),
   offset = NULL,
+  weights = NULL,
   se = c("analytic", "robust", "cluster", "none"),
-  cluster = NULL,
-  ...
+  cluster = NULL
 )
 }
 \arguments{
@@ -23,8 +24,7 @@ hurdle_count(
 
 \item{data}{A data frame.}
 
-\item{family}{\code{"poisson"}, \code{"negbin"}, or \code{"compois"} for the intensity; see
-\code{\link[=count_reg]{count_reg()}} for the COM-Poisson parameterization.}
+\item{family}{The intensity family; see \code{\link[=count_reg]{count_reg()}}.}
 
 \item{participation}{Optional one-sided formula for the participation model;
 defaults to the intensity right-hand side.}
@@ -37,22 +37,23 @@ or \code{"cloglog"}. Positive participation coefficients raise the probability o
 a \emph{positive count} (participation).}
 
 \item{offset}{Optional offset for the intensity, on the linear-predictor (log)
-scale (log-mean for Poisson/NB, log-rate for COM-Poisson): a numeric vector
-or the name of a column in \code{data}.}
+scale: a numeric vector or the name of a column in \code{data}.}
+
+\item{weights}{Optional frequency weights (a numeric vector or a column name),
+applied to both margins; see \code{\link[=count_reg]{count_reg()}}.}
 
 \item{se, cluster}{Standard-error type and optional cluster for the intensity;
 see \code{\link[=count_reg]{count_reg()}}.}
-
-\item{...}{Unused.}
 }
 \value{
 An object of class \code{"hurdle_count"}.
 }
 \description{
-Fits a participation logit joined to a zero-truncated Poisson or
-negative-binomial intensity, the count analogue of \code{\link[=hurdle_cpb]{hurdle_cpb()}}. Returned as
-a \code{"hurdle_count"} object that \code{\link[=compare_models]{compare_models()}} and \code{\link[=score]{score()}} accept, so a
-hurdle-CPB and a hurdle-NB can be compared on one footing.
+Fits a participation model joined to a zero-truncated intensity from any of
+the package's count families (see \code{\link[=count_reg]{count_reg()}}, Families), the count
+analogue of \code{\link[=hurdle_cpb]{hurdle_cpb()}}. Returned as a \code{"hurdle_count"} object that
+\code{\link[=compare_models]{compare_models()}} and \code{\link[=score]{score()}} accept, so a hurdle-CPB and a hurdle
+gamma-count can be compared on one footing.
 }
 \examples{
 set.seed(1); n <- 300; x <- rnorm(n); z <- rnorm(n)

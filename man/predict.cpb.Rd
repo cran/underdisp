@@ -7,7 +7,7 @@
 \method{predict}{cpb}(
   object,
   newdata = NULL,
-  type = c("response", "link", "ceiling", "prob"),
+  type = c("response", "rate", "link", "ceiling", "prob"),
   at = NULL,
   offset = NULL,
   ...
@@ -19,8 +19,11 @@
 \item{newdata}{Optional data frame of new covariate profiles; if omitted, the
 fitted data are used.}
 
-\item{type}{One of \code{"response"} (the mean lambda), \code{"link"} (the linear
-predictor), \code{"ceiling"} (the implied ceiling lambda/(1-alpha)), or \code{"prob"}
+\item{type}{One of \code{"response"} (the exact mean of the fitted distribution;
+for a zero-truncated fit the conditional mean E(Y | Y >= 1)), \code{"rate"}
+(the CPB rate parameter lambda = exp(x'b), which equals the mean only when
+lambda/(1-alpha) is an integer), \code{"link"} (the linear predictor, log
+lambda), \code{"ceiling"} (the implied ceiling lambda/(1-alpha)), or \code{"prob"}
 (the probability that \code{Y} equals \code{at}).}
 
 \item{at}{For \code{type = "prob"}, the count value(s) \code{y} whose probability is

@@ -47,5 +47,8 @@ bootstrap standard errors).}
 A data frame with one row per coefficient.
 }
 \description{
-Tidy a CPB fit (broom method)
+The two-part classes (\verb{hurdle_*}, \verb{zi_*}) return one row per coefficient
+in each equation, with a \code{component} column (the \pkg{broom} convention for
+multi-equation models) and the term prefixed by its component, so that
+\pkg{modelsummary} lays the table out without a \code{shape} argument.
 }

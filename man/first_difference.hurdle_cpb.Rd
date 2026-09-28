@@ -14,6 +14,7 @@
   level = 0.95,
   data = NULL,
   stage = c("both", "participation", "intensity", "zero", "count"),
+  cores = 1L,
   ...
 )
 
@@ -26,6 +27,7 @@
   level = 0.95,
   data = NULL,
   stage = c("both", "participation", "intensity", "zero", "count"),
+  cores = 1L,
   ...
 )
 }
@@ -48,6 +50,8 @@ refits the mixture).}
 the binary stage only (\code{"participation"}/\code{"zero"}), or the count stage
 only (\code{"intensity"}/\code{"count"}), holding the covariate at its reference in
 the other equation. All three component rows are always returned.}
+
+\item{cores}{Worker processes for the bootstrap refits (default 1); see \code{\link[=cpb]{cpb()}}.}
 
 \item{...}{Unused; unknown arguments error.}
 }

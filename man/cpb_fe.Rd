@@ -13,7 +13,9 @@ cpb_fe(
   B = 500,
   cluster = NULL,
   offset = NULL,
-  max.support = 500L,
+  weights = NULL,
+  cores = 1L,
+  max.support = NULL,
   inner_it = 30L,
   maxit = 3000L,
   reltol = 1e-07,
@@ -48,9 +50,16 @@ likelihood treats them as distinct units.}
 \item{offset}{Optional offset on the log-mean scale (an exposure): a numeric
 vector or the name of a column in \code{data}.}
 
-\item{max.support}{Guard on the maximum evaluated support.}
+\item{weights}{Optional frequency weights (a numeric vector or a column name);
+see \code{\link[=cpb]{cpb()}}.}
 
-\item{inner_it}{Golden-section iterations for each unit's inner maximization.}
+\item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
+
+\item{max.support}{Guard on the maximum evaluated support; \code{NULL} (default)
+sets \code{max(500, 10 * max(y))}. See \code{\link[=cpb]{cpb()}}.}
+
+\item{inner_it}{Golden-section iterations refining each unit's inner
+maximization after the grid scans (see Details).}
 
 \item{maxit, reltol}{Outer optimizer controls.}
 
@@ -68,7 +77,30 @@ out the unit intercepts. Each unit's intercept is solved by a one-dimensional
 inner maximization, so the outer optimizer handles only the covariate coefficients
 and the dispersion parameter. This avoids an explicit unit-dummy design matrix and
 scales to thousands of units, where dummy-based fitting exhausts memory. The
-concentrated log-likelihood equals the full-dummy log-likelihood exactly.
+concentrated log-likelihood equals the full-dummy log-likelihood to the
+tolerance of the inner search, which is solved exactly. Each unit's objective
+is a saw-tooth in its intercept: whenever the intercept crosses
+\eqn{\log(k(1-\alpha)) - o_{it}} for an integer \eqn{k} the support of
+observation \eqn{t} gains the point \eqn{k}, its normalizing constant grows,
+and the objective drops by about \eqn{(1-\alpha)^k}; between such
+breakpoints it is smooth and unimodal. Its supremum is therefore attained at
+an interior critical point of one tooth or as the left limit at a breakpoint,
+and the inner search evaluates every breakpoint within a window of the
+envelope's peak (located on a coarse grid around the unit's Poisson intercept)
+and refines inside whole teeth by golden section; every evaluation of the
+concentrated likelihood searches each unit afresh, so the objective is a
+function of the parameters alone. Solving the inner problem to its supremum makes the concentrated likelihood
+continuous in \code{alpha} (with kinks where a unit's maximizing tooth switches) but
+not in the slopes: where a unit's supremum sits on its feasibility floor (an
+observation whose count equals its ceiling) the intercept cannot retreat, so
+when another observation's breakpoint crosses that floor the concentrated
+likelihood drops by about \eqn{(1-\alpha)^k}, a cliff in the slopes on whose
+edge the maximizer can rest with a non-zero one-sided gradient. The outer
+optimizer is therefore a deterministic multistart: BFGS with the analytic
+envelope gradient from the Poisson slopes and two dispersion starts, a
+Nelder-Mead polish, and two perturbed restarts; alternative local optima
+differ by the order of the jumps (a few hundredths of a log-likelihood unit
+on a 12-unit panel), far inside the bootstrap variability of the estimates.
 }
 \details{
 Short panels: the dispersion parameter \code{alpha} and the fixed effects are subject to
@@ -80,9 +112,10 @@ for short panels. The covariate coefficients are not materially affected.
 (half-panel) jackknife: the model is refit on the first and second temporal
 halves of every unit's series (rows are split in the order supplied, which
 should be temporal order) and the corrected estimate is
-\code{2 * full - mean(halves)}. In the package's fixed-effects bias Monte Carlo the
-alpha bias at T = 6/10/20/40 falls from -0.147/-0.096/-0.056/-0.033 to
--0.038/-0.022/-0.016/-0.009. With correction on, \code{coefficients} and \code{alpha}
+\code{2 * full - mean(halves)}. In the package's fixed-effects bias Monte Carlo
+(150 units, alpha = 0.5) the alpha bias at T = 6/10/20/40 falls from
+-0.153/-0.100/-0.057/-0.033 to -0.046/-0.024/-0.013/-0.009. With correction on,
+\code{coefficients} and \code{alpha}
 are the corrected estimates (the maximum-likelihood values are kept in
 \verb{$uncorrected}), the unit effects and fitted values are re-concentrated at the
 corrected parameters, and \code{logLik}/\code{AIC} continue to refer to the
@@ -97,7 +130,7 @@ whenever the corrected dispersion leaves its feasible space or the two
 half-panel dispersion estimates disagree beyond what the 1/T bias can
 explain. A refusal is diagnostic information about the panel, not an error.
 The gate is deliberately powered over sized: in the package's calibration
-Monte Carlo it refuses about 9 percent of genuinely time-homogeneous panels
+Monte Carlo it refuses about 7 percent of genuinely time-homogeneous panels
 (a conservative nuisance; the returned fit is exactly the ordinary
 maximum-likelihood estimate) while catching 98 percent of dispersion regime
 changes and 100 percent of smooth unmodeled trends -- the cases where an
@@ -110,10 +143,10 @@ fixed effects, add \code{factor(time)} to \code{formula} (entered as dummies), o
 \examples{
 \donttest{
 set.seed(1)
-d <- do.call(rbind, lapply(1:60, function(i) {
-  x <- rnorm(20); lam <- exp(rnorm(1, 0, 0.5) + 0.5 * x)
+d <- do.call(rbind, lapply(1:25, function(i) {
+  x <- rnorm(12); lam <- exp(rnorm(1, 0, 0.5) + 0.5 * x)
   N <- pmax(round(lam / 0.5), 1)
-  data.frame(unit = i, x = x, y = rbinom(20, N, 0.5))
+  data.frame(unit = i, x = x, y = rbinom(12, N, 0.5))
 }))
 fit <- cpb_fe(y ~ x, data = d, fe = "unit")
 fit

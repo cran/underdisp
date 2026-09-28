@@ -12,7 +12,9 @@ gec_fe(
   B = 500,
   cluster = NULL,
   offset = NULL,
-  max.support = 500L,
+  weights = NULL,
+  cores = 1L,
+  max.support = NULL,
   inner_it = 30L,
   maxit = 3000L,
   reltol = 1e-07,
@@ -38,6 +40,11 @@ fixed-effects units. See \code{\link[=cpb_fe]{cpb_fe()}}.}
 \item{offset}{Optional offset on the log-mean scale (an exposure): a numeric
 vector or the name of a column in \code{data}.}
 
+\item{weights}{Optional frequency weights (a numeric vector or a column name);
+see \code{\link[=cpb]{cpb()}}.}
+
+\item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
+
 \item{max.support}{Guard on the maximum evaluated support.}
 
 \item{inner_it}{Golden-section iterations for each unit's inner maximization.}
@@ -57,6 +64,15 @@ the outer optimizer handles only the covariate coefficients and the free
 dispersion parameter \code{delta}. This is the \code{\link[=cpb_fe]{cpb_fe()}} concentration generalized
 to the whole Katz family: the panel can be under-, equi-, or overdispersed and
 the direction is estimated, not presumed.
+For \code{delta < 1} the Katz support is finite, but the likelihood is continuous across an
+integer ceiling (the entering support point's mass grows from zero) and only kinks
+there, so each unit's objective is unimodal in its intercept and is maximized by golden
+section on a bracket around the unit's Poisson intercept, expanded while the maximum
+sits at an edge; a maximum at a kink is tracked in the analytic gradient of the
+concentrated likelihood, which the outer BFGS uses. The feasibility floor is exact:
+every count must lie in \verb{0..ceiling(mu/(1-delta))}.
+Runtime: about twice that of \code{\link[=cpb_fe]{cpb_fe()}} on the same panel (the Katz recursion
+runs the whole support), so a 2,600-row panel in 146 units takes about two minutes.
 }
 \details{
 Limitation: unlike \code{\link[=cpb_fe]{cpb_fe()}}, \code{gec_fe()} has no \code{truncated} argument -- a

@@ -1,0 +1,23 @@
+## Count-valued and start arguments are refused by name before any fitting.
+set.seed(41)
+d <- data.frame(y = rcpb(60, 3, 0.5, truncated = FALSE), x = rnorm(60), u = rep(1:6, each = 10))
+
+test_that("max.support, alpha.start, B, and inner_it are checked on entry", {
+  expect_error(cpb(y ~ x, d, truncated = FALSE, max.support = -5), "'max.support' must be NULL or a whole number")
+  expect_error(cpb(y ~ x, d, truncated = FALSE, max.support = 3e9), "'max.support'")
+  expect_error(cpb(y ~ x, d, truncated = FALSE, max.support = 10.5), "'max.support'")
+  expect_error(cpb(y ~ x, d, truncated = FALSE, alpha.start = 1.5), "'alpha.start'")
+  expect_error(cpb(y ~ x, d, truncated = FALSE, alpha.start = NA), "'alpha.start'")
+  expect_error(cpb(y ~ x, d, truncated = FALSE, se = "bootstrap", B = 0), "'B' must be a whole number from 2")
+  expect_error(cpb_fe(y ~ x, d, fe = "u", inner_it = 0), "'inner_it'")
+  expect_error(cpb_fe(y ~ x, d, fe = "u", max.support = -1), "'max.support'")
+  expect_error(gec(y ~ x, d, max.support = "500"), "'max.support'")
+  expect_error(gec(y ~ x, d, se = "bootstrap", B = 1), "'B'")
+  expect_error(gec_fe(y ~ x, d, fe = "u", inner_it = 2.5), "'inner_it'")
+  expect_error(zi_cpb(y ~ x, d, max.support = 0), "'max.support'")
+  expect_error(zi_gec(y ~ x, d, se = "bootstrap", B = -3), "'B'")
+  expect_error(hurdle_cpb(y ~ x, d, se = "bootstrap", B = 1.5), "'B'")
+  expect_error(dgec(1, 2, 0.5, max.support = 5e9), "'max.support'")
+  expect_error(compare_dispersion(y ~ x, d, max.support = NA), "'max.support'")
+  expect_s3_class(cpb(y ~ x, d, truncated = FALSE, alpha.start = c(0.3, 0.6)), "cpb")
+})

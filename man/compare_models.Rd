@@ -27,7 +27,7 @@ raise a warning.
 }
 \examples{
 \donttest{
-set.seed(1); n <- 800; x <- rnorm(n); z <- rnorm(n)
+set.seed(1); n <- 400; x <- rnorm(n); z <- rnorm(n)
 y <- rhurdle_cpb(n, exp(1.2 + 0.5 * x), 0.5, plogis(-0.2 + 0.8 * z))
 d <- data.frame(y = y, x = x, z = z)
 compare_models(hurdle = hurdle_cpb(y ~ x, data = d, participation = ~ z),

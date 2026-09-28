@@ -14,7 +14,7 @@ rootogram(
 )
 }
 \arguments{
-\item{fit}{A \code{"cpb"} or \code{"hurdle_cpb"} object.}
+\item{fit}{A fitted \code{underdisp} count model (any class \code{\link[=score]{score()}} takes).}
 
 \item{kmax}{Highest count to display; defaults to the maximum observed count.}
 
@@ -30,7 +30,9 @@ frequencies.
 Draws a Tukey hanging rootogram: bars for the observed frequencies hang from
 the curve of expected frequencies, both on the square-root scale. Bars that
 hang below the zero line mark counts the model under-predicts; bars that stop
-short mark counts it over-predicts.
+short mark counts it over-predicts. A fit with frequency weights counts each
+row as many times as its weight in both the observed and the expected
+frequencies.
 }
 \examples{
 set.seed(1)

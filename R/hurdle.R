@@ -11,24 +11,35 @@
 #' @param lambda Mean parameter; a scalar or a length-`n` vector.
 #' @param alpha Shape/dispersion parameter in (0, 1).
 #' @param truncated If `TRUE`, draw from the zero-truncated CPB.
+#' @details The support of the CPB is `0, ..., floor(lambda / (1 - alpha))`. A rate
+#' whose ceiling `lambda / (1 - alpha)` is below 1 has the support `{0}`, so its
+#' zero-truncated distribution does not exist. With `truncated = TRUE` such a
+#' draw is set to 1 and a warning reports how many there were: the stated
+#' parameters give that count probability zero, so data simulated this way are
+#' not data from the model (in a simulation study, keep every ceiling at 1 or
+#' above).
 #' @return An integer vector of counts.
 #' @examples
 #' set.seed(1)
 #' table(rcpb(1000, lambda = 3, alpha = 0.5))
 #' @export
 rcpb <- function(n, lambda, alpha, truncated = FALSE) {
-  if (alpha <= 0 || alpha >= 1) stop("`alpha` must be in (0, 1).")
+  if (length(alpha) != 1L || alpha <= 0 || alpha >= 1) stop("`alpha` must be a single value in (0, 1).")
+  if (n == 0) return(integer(0))
   lambda <- rep_len(lambda, n)
-  out <- integer(n)
+  out <- integer(n); nbelow <- 0L
   for (i in seq_len(n)) {
     pr <- .cpb_pmf_core(lambda[i], alpha)
     K  <- length(pr) - 1L
     if (truncated) {
-      if (K < 1) { out[i] <- 1L; next }
+      if (K < 1) { out[i] <- 1L; nbelow <- nbelow + 1L; next }
       pr[1] <- 0; pr <- pr / sum(pr)
     }
     out[i] <- as.integer(sample(0:K, 1L, prob = pr))
   }
+  if (nbelow > 0L)
+    warning(nbelow, " of ", n, " rates have a ceiling lambda / (1 - alpha) below 1, where the zero-truncated CPB does not ",
+            "exist; those draws are set to 1, a count the stated parameters give probability zero.", call. = FALSE)
   out
 }
 
@@ -88,6 +99,9 @@ rhurdle_cpb <- function(n, lambda, alpha, p) {
 #'   `sandwich::vcovCL(fit$participation, cluster = ...)`.
 #' @param se Inference for the intensity coefficients: `"none"` or `"bootstrap"`.
 #' @param B Bootstrap replicates when `se = "bootstrap"`.
+#' @param weights Optional frequency weights (a numeric vector or a column name),
+#'   applied to both margins; see [cpb()].
+#' @param cores Worker processes for the intensity bootstrap; see [cpb()].
 #' @param ... Passed to [cpb()] or [cpb_fe()].
 #' @return An object of class `"hurdle_cpb"` with elements `participation` (a
 #'   `glm`), `intensity` (a `cpb` or `cpb_fe`), and bookkeeping.
@@ -102,53 +116,78 @@ rhurdle_cpb <- function(n, lambda, alpha, p) {
 #' @export
 hurdle_cpb <- function(formula, data, participation = NULL, fe = NULL, part_fe = NULL,
                        link = c("logit", "probit", "cloglog"), offset = NULL,
-                       cluster = NULL, se = c("none", "bootstrap"), B = 500, ...) {
+                       cluster = NULL, se = c("none", "bootstrap"), B = 500, weights = NULL,
+                       cores = 1L, ...) {
+  .ud_no_formula_offset(formula, participation)
+  data <- .ud_drop_na_fe(data, list(fe, part_fe))
+  offset <- .ud_align_vec(offset, data); weights <- .ud_align_vec(weights, data); cluster <- .ud_align_vec(cluster, data)
   se <- match.arg(se); link <- match.arg(link)
+  ## reduce to complete cases on all model variables so the two margins stay aligned
+  mv <- unique(c(all.vars(formula), all.vars(if (is.null(participation)) formula[-2L] else participation), fe, part_fe))
+  keep <- stats::complete.cases(data[, intersect(mv, names(data)), drop = FALSE])
+  cl_vals <- .ud_cluster_values(cluster, data, keep)           # checked before the rows are reduced
+  if (!all(keep)) {
+    if (!is.null(offset) && !is.character(offset)) offset <- offset[keep]
+    if (!is.null(weights) && !is.character(weights)) weights <- weights[keep]
+    data <- data[keep, , drop = FALSE]
+  }
   y <- stats::model.response(stats::model.frame(formula, data))
+  if (!is.numeric(y)) stop("Response must be a numeric count; got ", class(y)[1L], ".")
   if (any(y < 0) || any(y != floor(y))) stop("The response must be nonnegative integer counts.")
+  .ud_warn_all_zero(y)
   d <- as.integer(y > 0)
   int_offset <- if (is.null(offset)) NULL                       # offset applies to the intensity
                 else if (is.character(offset) && length(offset) == 1L) offset else offset[y > 0]
   ## carry a cluster identifier as a column so both margins can see it aligned
   if (!is.null(cluster) && !(is.character(cluster) && length(cluster) == 1L)) {
-    data[[".cluster"]] <- cluster; cluster <- ".cluster"
+    data[[".cluster"]] <- cl_vals; cluster <- ".cluster"
   }
+  ## frequency weights as a column so both margins see them aligned
+  if (!is.null(weights) && !(is.character(weights) && length(weights) == 1L)) {
+    if (length(weights) != nrow(data)) stop("'weights' must have one value per row of 'data'.")
+    data[[".hw"]] <- as.numeric(weights); weights <- ".hw"
+  }
+  w_all <- .ud_weights(weights, data, seq_len(nrow(data)))
 
   ## participation (hurdle) model: logit of d, optionally with fixed effects
   prhs <- if (is.null(participation)) formula[-2L] else participation
   if (!is.null(part_fe))
     prhs <- stats::reformulate(c(labels(stats::terms(prhs)), paste0("factor(", part_fe, ")")))
-  pdata <- data; pdata[[".d"]] <- d
-  pfit <- stats::glm(stats::update(prhs, .d ~ .), data = pdata, family = stats::binomial(link = link))
+  pdata <- data; pdata[[".d"]] <- d; pdata[[".w"]] <- if (is.null(w_all)) rep(1, nrow(data)) else w_all
+  pfit <- stats::glm(stats::update(prhs, .d ~ .), data = pdata, weights = .w,
+                     family = stats::binomial(link = link))
 
   ## intensity model on the positive counts, with optional unit fixed effects
   pos <- data[y > 0, , drop = FALSE]
   ifit <- if (is.null(fe)) cpb(formula, data = pos, truncated = TRUE, se = se, B = B,
-                               cluster = cluster, offset = int_offset, ...)
+                               cluster = cluster, offset = int_offset, weights = weights, cores = cores, ...)
           else cpb_fe(formula, data = pos, fe = fe, truncated = TRUE, se = se, B = B,
-                      cluster = cluster, offset = int_offset, ...)
+                      cluster = cluster, offset = int_offset, weights = weights, cores = cores, ...)
 
   ## per-observation intensity lambda (fixed-effects-aware) and a reference
   ## profile, for calibration and the first-difference decomposition
   Xall <- stats::model.matrix(stats::delete.response(stats::terms(formula)), data)
   beta <- ifit$coefficients
+  off_all <- if (is.null(offset)) 0 else if (is.character(offset)) as.numeric(data[[offset]]) else as.numeric(offset)
   if (is.null(fe)) {
-    lambda_full <- as.numeric(exp(Xall %*% beta))
-    int_xref <- colMeans(Xall); int_fe_ref <- 0
+    lambda_full <- as.numeric(exp(off_all + Xall %*% beta))
+    int_xref <- colMeans(Xall); int_fe_ref <- mean(off_all)
   } else {
     Xcov <- Xall[, names(beta), drop = FALSE]
-    int_fe_ref <- mean(ifit$fe)
-    fe_i <- ifit$fe[as.character(data[[fe]])]; fe_i[is.na(fe_i)] <- int_fe_ref
-    lambda_full <- as.numeric(exp(fe_i + Xcov %*% beta))
+    int_fe_ref <- mean(ifit$fe) + mean(off_all)
+    fe_i <- ifit$fe[as.character(data[[fe]])]; fe_i[is.na(fe_i)] <- mean(ifit$fe)
+    lambda_full <- as.numeric(exp(off_all + fe_i + Xcov %*% beta))
     int_xref <- colMeans(Xcov)
   }
 
-  structure(list(participation = pfit, intensity = ifit, Zpart = stats::model.matrix(pfit),
+  structure(list(participation = pfit, intensity = ifit,
+                 converged = isTRUE(pfit$converged) && isTRUE(ifit$converged), Zpart = stats::model.matrix(pfit),
                  y = as.integer(y), p_full = as.numeric(stats::fitted(pfit)),
                  lambda_full = lambda_full, n = length(y), n_participate = sum(d),
                  int_beta = beta, int_xref = int_xref, int_fe_ref = int_fe_ref,
                  part_beta = stats::coef(pfit), part_xref = colMeans(stats::model.matrix(pfit)),
                  fe = fe, part_fe = part_fe, link = link,
+                 weights = w_all, nobs_weighted = if (is.null(w_all)) length(y) else sum(w_all),
                  cluster = if (is.character(cluster)) cluster else NULL,
                  formula = formula, part_formula = participation, call = match.call()),
             class = "hurdle_cpb")
@@ -187,13 +226,17 @@ print.hurdle_cpb <- function(x, ...) {
 predict.hurdle_cpb <- function(object, newdata = NULL,
                                type = c("response", "participation", "intensity"), ...) {
   type <- match.arg(type)
-  p <- stats::predict(object$participation, newdata = newdata, type = "response")
-  if (type == "participation") return(p)
+  if (!is.null(newdata)) {
+    need <- setdiff(all.vars(stats::delete.response(stats::terms(object$participation))), names(newdata))
+    if (length(need)) stop("'newdata' is missing participation variable(s): ", paste(need, collapse = ", "), ".")
+  }
+  p <- .ud_glm_predict(object$participation, newdata)
+  if (type == "participation") return(as.numeric(p))
   ## newdata = NULL: use the stored FULL-length intensity (lambda_full, one per
   ## observation), NOT predict(intensity) which returns only the positives-only
   ## fitted values (length n_pos) and would recycle-misalign against p (length n).
-  ey <- if (is.null(newdata)) object$lambda_full
-        else predict(object$intensity, newdata = newdata, type = "response")
-  if (type == "intensity") return(ey)
-  p * ey
+  ey <- if (is.null(newdata)) .cpb_ztmean(object$lambda_full, object$intensity$alpha)
+        else predict(object$intensity, newdata = newdata, type = "response")   # E(Y | Y > 0)
+  if (type == "intensity") return(as.numeric(ey))
+  as.numeric(p * ey)                                  # unnamed, like fitted() and the siblings
 }

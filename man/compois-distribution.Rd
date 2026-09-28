@@ -8,22 +8,28 @@
 \alias{rcompois}
 \title{Conway--Maxwell--Poisson distribution functions}
 \usage{
-dcompois(x, lambda, nu, log = FALSE)
+dcompois(x, lambda, nu, log = FALSE, mu = NULL)
 
-pcompois(q, lambda, nu, lower.tail = TRUE, log.p = FALSE)
+pcompois(q, lambda, nu, lower.tail = TRUE, log.p = FALSE, mu = NULL)
 
-qcompois(p, lambda, nu, lower.tail = TRUE, log.p = FALSE)
+qcompois(p, lambda, nu, lower.tail = TRUE, log.p = FALSE, mu = NULL)
 
-rcompois(n, lambda, nu)
+rcompois(n, lambda, nu, mu = NULL)
 }
 \arguments{
 \item{x, q}{Vector of quantiles (non-negative integers).}
 
-\item{lambda}{Rate parameter (scalar or vector, recycled).}
+\item{lambda}{Rate parameter (scalar or vector, recycled). Give \code{mu}
+instead to specify the distribution by its mean.}
 
 \item{nu}{Dispersion parameter (scalar).}
 
 \item{log, log.p}{Return log probabilities.}
+
+\item{mu}{Optional mean (scalar or vector, recycled); when supplied, the rate
+\code{lambda} solving \eqn{\mathrm{E}(Y) = \mu} is found numerically (Huang's
+2017 mean parameterization, the one \code{count_reg(family = "mpcmp")} fits)
+and \code{lambda} is ignored.}
 
 \item{lower.tail}{If \code{TRUE} (default), \eqn{P(X \le x)}.}
 
@@ -37,9 +43,10 @@ rcompois(n, lambda, nu)
 }
 \description{
 Density, distribution, quantile, and random generation for the COM-Poisson
-with rate \code{lambda} and dispersion \code{nu} (\code{nu > 1} underdispersed, \code{nu = 1}
-Poisson, \code{nu < 1} overdispersed). Complements the estimator
-\code{count_reg(..., family = "compois")}.
+with rate \code{lambda} (or mean \code{mu}) and dispersion \code{nu} (\code{nu > 1}
+underdispersed, \code{nu = 1} Poisson, \code{nu < 1} overdispersed). Complements the
+estimators \code{count_reg(..., family = "compois")} (rate parameterization) and
+\code{count_reg(..., family = "mpcmp")} (mean parameterization).
 }
 \examples{
 dcompois(0:5, lambda = 3, nu = 1.5)

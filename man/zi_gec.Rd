@@ -15,7 +15,9 @@ zi_gec(
   max.support = 500,
   maxit = 200,
   tol = 1e-06,
-  offset = NULL
+  offset = NULL,
+  weights = NULL,
+  cores = 1L
 )
 }
 \arguments{
@@ -42,6 +44,11 @@ equation, entered as factor dummies (opt-in).}
 \item{offset}{Optional exposure offset (log scale) for the count component:
 a numeric vector or the name of a column in \code{data}; the bootstrap carries
 it through every replicate.}
+
+\item{weights}{Optional frequency weights (a numeric vector or a column name);
+see \code{\link[=cpb]{cpb()}}.}
+
+\item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
 An object of class \code{"zi_gec"}.

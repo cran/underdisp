@@ -57,16 +57,42 @@ summary(fit)
 ```
 
 The dispersion parameter `alpha` summarizes the compression, and each observation
-carries an implied ceiling `lambda / (1 - alpha)`.
+carries an implied ceiling `lambda / (1 - alpha)`. The CPB is a binomial with a
+non-integer number of trials, renormalized over its finite support, so its mean
+is not exactly the rate `exp(x'b)`: `fitted()` and
+`predict(type = "response")` report the exact mean of the fitted distribution
+(the conditional mean given `Y >= 1` for a zero-truncated fit), and
+`predict(type = "rate")` the rate.
 
 ## Quantities of interest
 
-Predicted probabilities, the implied ceiling, and King-style first differences
-are available for user-specified covariate profiles.
+Predicted means, the implied ceiling, and first differences are available for
+user-specified covariate profiles.
 
 ```{r qoi}
 predict(fit, newdata = data.frame(x = c(-1, 0, 1)), type = "response")
 implied_ceiling(fit, newdata = data.frame(x = 0))
+first_difference(fit, "x", from = -1, to = 1)
+```
+
+## Testing equidispersion
+
+The Poisson is the equidispersed member of every family in the package (`alpha
+= 1` for the CPB, `delta = 1` for the GEC, `nu = 1` for the COM-Poisson, and so
+on), so `dispersion_test()` tests a fitted model's dispersion parameter against
+its Poisson value by a likelihood-ratio test on the fitted design, with
+fixed effects carried into the null. Where the Poisson value sits on the
+boundary of the parameter space (the CPB, the negative binomial) the test is
+one-sided, and its p-value comes by default from a parametric bootstrap under
+the fitted Poisson, because the asymptotic Self--Liang mixture over-rejects in
+finite samples; `B = 0` gives the quick asymptotic value shown here. Elsewhere
+the alternative can be two-sided or directional. For a plain Poisson fit the Cameron--Trivedi
+auxiliary regression is available as `method = "auxiliary"`.
+
+```{r dtest}
+dispersion_test(fit, B = 0)   # asymptotic value; the default is the bootstrap p-value
+dispersion_test(count_reg(y ~ x, data = d, family = "poisson"),
+                method = "auxiliary", alternative = "under")
 ```
 
 ## Bootstrap inference
@@ -74,22 +100,31 @@ implied_ceiling(fit, newdata = data.frame(x = 0))
 Because the CPB's support depends on its parameters, Hessian-based standard
 errors are unreliable; coefficient inference uses a cold-multistart pairs
 bootstrap (validated to nominal coverage in the companion paper), and the
-dispersion parameter carries a profile-likelihood interval.
+dispersion parameter carries a profile-likelihood interval. That interval is
+first-order by default: the estimate of `alpha` is biased toward zero (the
+log-ceiling coefficients behave like endpoint parameters), so it covers about
+0.90 to 0.94 in simulations, with its misses on the upper side.
+`calibrate_alpha()` is the opt-in remedy: it stores the parametric-bootstrap
+distribution of the signed root of the profile likelihood ratio in the fit
+(`fit <- calibrate_alpha(fit, B = 199, cores = 4, seed = 1)`, about a third of
+a fit per replicate), after which `alpha_confint()`, `confint()`,
+`implied_ceiling()` and `summary()` report the calibrated interval. Both
+intervals are model-based and assume independent observations. `cores =` runs
+the replicates on a socket cluster seeded from the session.
 
 ```{r boot}
-fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 99)
+fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 49)   # a small B keeps the vignette quick
 summary(fit_b)
-irr(fit_b)             # incidence-rate ratios with percentile intervals
-alpha_confint(fit_b)   # profile-likelihood interval for alpha
+irr(fit_b)             # rate ratios with percentile intervals
+confint(fit_b)         # coefficients (percentile) and alpha (first-order profile likelihood)
 ```
 
 ## The free-dispersion GEC
 
 `gec()` fits King's generalized event count (Katz) model, whose dispersion
-`delta` (the variance-to-mean ratio) is estimated freely — so the data choose
-the direction of dispersion rather than the analyst presuming it. On the
-underdispersed count above it recovers `delta` well below one; on a Poisson
-outcome it sits at one.
+`delta` is estimated freely, so the data choose the direction of dispersion
+rather than the analyst presuming it. On the underdispersed count above it
+recovers `delta` well below one; on a Poisson outcome it sits at one.
 
 ```{r gec}
 gec(y ~ x, data = d, se = "none")                                  # delta ~ 0.5
@@ -107,11 +142,22 @@ hide. `cpb_fe()` absorbs a full set of unit fixed effects by concentrating them
 out of the likelihood, so it scales to thousands of units.
 
 ```{r fe}
-panel <- do.call(rbind, lapply(1:50, function(i) {
+panel <- do.call(rbind, lapply(1:30, function(i) {
   xx <- rnorm(12); NN <- pmax(round(exp(rnorm(1, 0, 0.4) + 0.4 * xx) / 0.5), 1)
   data.frame(unit = i, x = xx, y = rbinom(12, NN, 0.5))
 }))
-cpb_fe(y ~ x, data = panel, fe = "unit")
+fe_fit <- cpb_fe(y ~ x, data = panel, fe = "unit")
+fe_fit
+dispersion_test(fe_fit, B = 0)   # the statistic against a Poisson with the same unit effects
+```
+
+With unit fixed effects the asymptotic distribution of that statistic does not
+apply, so its p-value comes from a parametric bootstrap under the fitted
+Poisson. Every replicate refits the model, which makes the bootstrap about 199
+times as slow as the fit; it is not run here:
+
+```{r fe-boot, eval = FALSE}
+dispersion_test(fe_fit, cores = 2)   # parametric-bootstrap p-value, 199 replicates
 ```
 
 ## Comparing the family
@@ -124,29 +170,48 @@ reports a fit comparison plus the CPB's ceiling-exceedance share.
 compare_dispersion(y ~ x, data = d)$table
 ```
 
-## Matched Poisson, NB, and COM-Poisson baselines
+## The wider underdispersed family
 
-For model selection, `count_reg()` fits Poisson, negative-binomial, and
-COM-Poisson regressions -- each with the same fixed-effects, zero-truncation,
-hurdle, zero-inflation, offset, and robust-/cluster-standard-error options as the
-CPB -- so `compare_models()` can place the CPB next to its baselines on one
-footing (identical degrees of freedom, log-likelihood, and proper-score
-accounting).
+Underdispersion has more than one mechanism, and `count_reg()` fits the
+distributions that express them through one interface: the classical
+COM-Poisson (`"compois"`, rate-parameterized) and Huang's mean-parameterized
+COM-Poisson (`"mpcmp"`, a soft tail), the Consul--Jain generalized Poisson
+(`"genpois"`, constant variance-to-mean ratio, finite support when
+underdispersed), Winkelmann's gamma-count (`"gammacount"`, events with more
+regular timing than a Poisson process), and Efron's double Poisson
+(`"doublepois"`). Each inherits fixed effects, zero-truncation, hurdle and
+zero-inflated forms, offsets, frequency weights, robust and cluster-robust
+standard errors, and every method in the package, so `compare_models()` places
+them next to the CPB on one footing.
 
-```{r matched}
-cpb_fit <- cpb(y ~ x, data = d, truncated = FALSE, se = "none")
-compare_models(
-  CPB          = cpb_fit,
-  Poisson      = count_reg(y ~ x, data = d, family = "poisson"),
-  NB           = count_reg(y ~ x, data = d, family = "negbin"),
-  `COM-Poisson`= count_reg(y ~ x, data = d, family = "compois")
+```{r wider}
+dw <- d[1:150, ]                         # part of the sample keeps the seven fits quick
+fits <- list(
+  CPB          = cpb(y ~ x, data = dw, truncated = FALSE, se = "none"),
+  Poisson      = count_reg(y ~ x, data = dw, family = "poisson"),
+  NB           = count_reg(y ~ x, data = dw, family = "negbin"),
+  `COM-Poisson`= count_reg(y ~ x, data = dw, family = "mpcmp"),
+  GenPoisson   = count_reg(y ~ x, data = dw, family = "genpois"),
+  GammaCount   = count_reg(y ~ x, data = dw, family = "gammacount"),
+  DoublePois   = count_reg(y ~ x, data = dw, family = "doublepois")
 )
+do.call(compare_models, fits)
 ```
 
 On underdispersed data the negative binomial collapses onto the Poisson, while
-the CPB and COM-Poisson capture the compression and win on AIC and the proper
-scores. The correlated-random-effects device (`mundlak()`) and matching
-`d`/`p`/`q`/`r` functions (e.g. `rcompois()`, `dcpb()`) round out the family.
+the underdispersed families capture the compression and win on AIC and the
+proper scores. The families differ in how their dispersion moves with the mean,
+and `dispersion_profile()` sets the empirical conditional variance-to-mean
+ratio, by bins of the fitted mean, against the curve each family implies:
+
+```{r profile}
+dispersion_profile(CPB = fits$CPB, NB = fits$NB, GammaCount = fits$GammaCount,
+                   GenPoisson = fits$GenPoisson)
+```
+
+The correlated-random-effects device (`mundlak()`) and matching
+`d`/`p`/`q`/`r` functions (`dcpb()`, `dgec()`, `dcompois()`, `dgammacount()`,
+`dgenpois()`, `ddoublepois()`) round out the family.
 
 ## Excess zeros: hurdle and zero-inflated models
 
@@ -186,6 +251,18 @@ participation equation separates, fit that stage with a dedicated
 bias-reduction package (`logistf`, `brglm2`) alongside this package's
 zero-truncated intensity.
 
+## Weights
+
+Every estimator takes frequency `weights` (a weight of `w` is equivalent to
+`w` copies of the row, in the likelihood, the information, and the bootstrap),
+so tabulated data fit exactly as the expanded data would:
+
+```{r weights}
+w <- sample(1:3, n, TRUE)
+c(weighted = count_reg(y ~ x, data = d, family = "gammacount", weights = w)$loglik,
+  expanded = count_reg(y ~ x, data = d[rep(seq_len(n), w), ], family = "gammacount")$loglik)
+```
+
 ## Short panels: bias-corrected fixed effects
 
 The concentrated fixed-effects dispersion estimate carries the incidental-
@@ -196,7 +273,7 @@ jackknife of Dhaene and Jochmans (2015), refitting on each unit's temporal
 halves.
 
 ```{r jackknife}
-short <- do.call(rbind, lapply(1:30, function(i) {
+short <- do.call(rbind, lapply(1:16, function(i) {
   xx <- rnorm(8); NN <- pmax(round(exp(1.0 + rnorm(1, 0, 0.4) + 0.3 * xx) / 0.5), 1)
   data.frame(unit = i, x = xx, y = rbinom(8, NN, 0.5))
 }))
@@ -212,7 +289,7 @@ that is exchangeable under any time pattern -- and if the temporal halves
 disagree beyond that placebo noise, the correction is *refused* with a warning
 naming the failed assumption and the maximum-likelihood fit is returned. On a
 trending or regime-changing panel, the refusal is the correct answer. The gate
-is deliberately powered over sized: in calibration it refuses about 9% of
+is deliberately powered over sized: in calibration it refuses about 7% of
 genuinely homogeneous panels (you keep the ordinary ML fit) while catching 98%
 of dispersion regime changes and all smooth unmodeled trends.
 

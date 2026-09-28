@@ -4,7 +4,12 @@
 \alias{predict.cpb_fe}
 \title{Predictions from a fixed-effects CPB fit}
 \usage{
-\method{predict}{cpb_fe}(object, newdata = NULL, type = c("response", "link", "ceiling"), ...)
+\method{predict}{cpb_fe}(
+  object,
+  newdata = NULL,
+  type = c("response", "rate", "link", "ceiling"),
+  ...
+)
 }
 \arguments{
 \item{object}{A \code{"cpb_fe"} object.}
@@ -13,7 +18,9 @@
 average unit (the mean fixed effect), since the panel's own unit effects do
 not apply to new rows.}
 
-\item{type}{\code{"response"} (the mean), \code{"link"} (the log mean), or \code{"ceiling"}.}
+\item{type}{\code{"response"} (the mean; for a zero-truncated fit the conditional
+mean E(Y | Y >= 1)), \code{"rate"} (the CPB rate lambda), \code{"link"} (the log
+rate), or \code{"ceiling"}.}
 
 \item{...}{Unused.}
 }

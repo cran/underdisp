@@ -20,7 +20,10 @@ qcpb(p, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE)
 
 \item{alpha}{Shape parameter in (0, 1).}
 
-\item{truncated}{If \code{TRUE}, use the zero-truncated CPB.}
+\item{truncated}{If \code{TRUE}, use the zero-truncated CPB. Where the implied
+ceiling \code{lambda / (1 - alpha)} is below 1 the CPB puts all its mass on 0,
+and its zero-truncated form is the point mass at 1, the zero-truncated
+distribution for every ceiling in [1, 2).}
 
 \item{log, log.p}{If \code{TRUE}, probabilities are given as log.}
 

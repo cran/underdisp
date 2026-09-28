@@ -5,9 +5,11 @@
 //   P(k+1)/P(k) = (omega + gamma k) / (k + 1).
 // delta < 1 (gamma < 0): underdispersed, finite support (the CPB / binomial cell).
 // delta = 1 (gamma = 0): Poisson. delta > 1 (gamma > 0): overdispersed (Katz = NB).
-// The recursion gives exact moments (mean mu, variance delta*mu), which is the
-// Winkelmann-Signorino-King moment correction realized directly rather than
-// approximated. Computed in log-space for numerical stability.
+// On an unbounded support (delta >= 1) the recursion has mean mu and variance
+// delta*mu exactly; for delta < 1 the support is finite and the renormalized
+// pmf's moments equal those values only when mu/(1-delta) is an integer, so
+// the fitted mean is always computed from the pmf (gec_mean_cpp) and mu is the
+// rate parameter of the recursion. Computed in log-space for numerical stability.
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
@@ -15,13 +17,24 @@ using namespace Rcpp;
 
 // log P(Y=y | mu, delta); fills p0out with P(0) if non-null. Returns -1e300 when
 // y lies beyond the (finite) support of an underdispersed fit.
+// The recursion runs at least to `kmin` (the observed count, or the highest
+// count a pmf matrix needs) before the negligible-tail stopping rule applies,
+// so a count in the far tail of an unbounded (delta >= 1) member gets its small
+// probability rather than the infeasibility sentinel; only delta < 1 has a
+// finite support, and only there can y be infeasible.
+// The recursion is never cut by `max_support` silently: a rate whose terms have
+// not fallen below relative precision by the guard is infeasible (-1e300), so
+// the guard refuses rather than renormalizes over 0..max_support; the callers
+// report it (a fit warns when the guard binds, predictions are NA).
 static double gec_logpmf(int y, double mu, double delta, int max_support,
-                         double* p0out, std::vector<double>& lw) {
+                         double* p0out, std::vector<double>& lw, int kmin = 0) {
   double gamma = (delta - 1.0) / delta;
   double omega = mu / delta;
   lw.clear(); lw.push_back(0.0);
   double mx = 0.0;
   int k = 0;
+  int need = std::max(y, kmin);
+  if (!R_finite(mu) || mu <= 0.0) { if (p0out) *p0out = NA_REAL; return -1e300; }
   while (k <= max_support) {
     double num = omega + gamma * (double)k;
     if (num <= 0.0) break;                          // finite support (gamma < 0)
@@ -29,7 +42,14 @@ static double gec_logpmf(int y, double mu, double delta, int max_support,
     lw.push_back(next);
     if (next > mx) mx = next;
     k++;
-    if (gamma >= 0.0 && next - mx < -36.0) break;   // negligible overdispersed tail
+    // the terms are unimodal in k (their ratio (omega + gamma k)/(k+1) is
+    // decreasing), so once past `need` the sum stops 36 log units below the peak
+    if (k >= need && next - mx < -36.0) break;
+  }
+  if (k > max_support) {                            // the guard binds: refuse
+    if (p0out) *p0out = NA_REAL;
+    lw.clear();
+    return -1e300;
   }
   int K = (int)lw.size() - 1;
   double s = 0.0;
@@ -57,6 +77,25 @@ double gec_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, Numer
   return -ll;
 }
 
+// Weighted GEC negative log-likelihood, -sum_i w_i log P(Y_i) (frequency weights).
+// [[Rcpp::export]]
+double gec_wnll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector w,
+                    NumericVector offset, int max_support) {
+  int n = X.nrow(), p = X.ncol();
+  double delta = std::exp(params[p]);
+  if (delta <= 1e-8 || delta >= 1e8) return 1e10;
+  double ll = 0.0;
+  std::vector<double> lw;
+  for (int i = 0; i < n; i++) {
+    double eta = offset[i];
+    for (int j = 0; j < p; j++) eta += X(i, j) * params[j];
+    double lp = gec_logpmf(Y[i], std::exp(eta), delta, max_support, nullptr, lw);
+    if (lp <= -1e299) return 1e10;
+    ll += w[i] * lp;
+  }
+  return -ll;
+}
+
 // [[Rcpp::export]]
 NumericMatrix gec_lp0_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, int max_support) {
   int n = X.nrow(), p = X.ncol();
@@ -80,12 +119,28 @@ NumericMatrix gec_pmf_cpp(NumericVector mu, double delta, int kmax, int max_supp
   NumericMatrix out(n, kmax + 1);
   std::vector<double> lw;
   for (int i = 0; i < n; i++) {
-    gec_logpmf(0, mu[i], delta, max_support, nullptr, lw);
+    gec_logpmf(0, mu[i], delta, max_support, nullptr, lw, kmax);
+    if (lw.empty()) { for (int k = 0; k <= kmax; k++) out(i, k) = NA_REAL; continue; }   // the guard binds
     int K = (int)lw.size() - 1;
     double mxx = -1e300; for (int j = 0; j <= K; j++) if (lw[j] > mxx) mxx = lw[j];
     double s = 0.0; for (int j = 0; j <= K; j++) s += std::exp(lw[j] - mxx);
     double logZ = mxx + std::log(s);
     for (int k = 0; k <= kmax; k++) out(i, k) = (k <= K) ? std::exp(lw[k] - logZ) : 0.0;
+  }
+  return out;
+}
+
+// the length of the recursion at (mu, delta): the support end for delta < 1,
+// the point where the tail drops below relative precision otherwise; NA where
+// the guard binds. A fit whose largest value reaches max_support is at the guard.
+// [[Rcpp::export]]
+IntegerVector gec_klen_cpp(NumericVector mu, double delta, int max_support) {
+  int n = mu.size();
+  IntegerVector out(n);
+  std::vector<double> lw;
+  for (int i = 0; i < n; i++) {
+    gec_logpmf(0, mu[i], delta, max_support, nullptr, lw);
+    out[i] = lw.empty() ? NA_INTEGER : (int)lw.size() - 1;
   }
   return out;
 }
@@ -98,6 +153,7 @@ NumericVector gec_mean_cpp(NumericVector mu, double delta, int max_support) {
   std::vector<double> lw;
   for (int i = 0; i < n; i++) {
     gec_logpmf(0, mu[i], delta, max_support, nullptr, lw);
+    if (lw.empty()) { out[i] = NA_REAL; continue; }               // the guard binds
     int K = (int)lw.size() - 1;
     double mxx = 0.0; for (int j = 0; j <= K; j++) if (lw[j] > mxx) mxx = lw[j];
     double s = 0.0, m = 0.0;

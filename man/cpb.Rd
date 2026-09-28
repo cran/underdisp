@@ -12,8 +12,10 @@ cpb(
   B = 500,
   cluster = NULL,
   offset = NULL,
+  weights = NULL,
+  cores = 1L,
   alpha.start = 0.5,
-  max.support = 500,
+  max.support = NULL,
   maxit = 20000,
   reltol = 1e-08
 )
@@ -47,11 +49,25 @@ parameter-dependent support makes a Hessian-based sandwich unreliable.}
 \item{offset}{Optional offset on the log-mean scale (an exposure): a numeric
 vector or the name of a column in \code{data}, making the model a rate model.}
 
+\item{weights}{Optional frequency weights: a numeric vector or the name of a
+column in \code{data}. A weight of \eqn{w_i} is equivalent to \eqn{w_i} copies of
+row \eqn{i}; the bootstrap resamples rows together with their weights, and
+\code{nobs()} returns the weight total.}
+
+\item{cores}{Number of worker processes for the bootstrap (default 1). With
+\code{cores > 1} the replicates run on a socket cluster whose random streams are
+seeded from the calling session, so \code{set.seed()} before the call
+reproduces a parallel run (parallel and serial draws differ).}
+
 \item{alpha.start}{Starting value for the dispersion parameter (default 0.5); the
 fit also multi-starts over a spread of alpha values.}
 
-\item{max.support}{Guard on the maximum evaluated support (default 500); fits with
-an implied ceiling above this are treated as infeasible (alpha near 1).}
+\item{max.support}{Guard on the maximum evaluated support: parameter values
+whose implied ceiling exceeds it are treated as infeasible (they lie in the
+\code{alpha} near 1 region where the support explodes). The default \code{NULL}
+sets it to \code{max(500, 10 * max(y))}. A fit whose largest ceiling reaches the
+guard is flagged with a warning and in \verb{$support_binding}, because \code{alpha}
+is then bounded by the guard rather than by the data.}
 
 \item{maxit, reltol}{Optimizer controls passed to \code{\link[stats:optim]{stats::optim()}}.}
 }
@@ -72,14 +88,41 @@ an otherwise zero-inflated outcome.
 }
 \details{
 The mean is modelled log-linearly, \eqn{\lambda_i = \exp(x_i'\beta)}. Because the
-support depends on the parameters, the log-likelihood is non-smooth at the
-feasibility boundary and the numerical Hessian is unreliable; inference therefore
-uses a cold-multistart bootstrap for the coefficients (validated to nominal
-coverage) and a profile-likelihood interval for \eqn{\alpha} (see \code{\link[=confint.cpb]{confint.cpb()}}).
+support \eqn{0, \ldots, \lfloor \lambda_i/(1-\alpha) \rfloor} depends on the
+parameters, the log-likelihood is discontinuous: whenever a parameter move
+carries an observation's ceiling across an integer its normalizing constant
+jumps, by about \eqn{(1-\alpha)^{k}} at ceiling \eqn{k}. The maximizer is
+found by a deterministic multistart, BFGS from the Poisson solution at each
+value of \code{alpha.start} polished by Nelder-Mead with feasibility-repaired
+restarts, on covariates scaled to unit standard deviation (the coefficients
+are mapped back, so the fit does not depend on the covariates' units), and
+the reported maximum is the maximum of the fit's own profile in \code{alpha}: the
+profile is traced by continuation on both sides of the estimate (the slopes
+re-maximized at each step from the neighbouring solution) until it has
+dropped four log-likelihood units, and a trace point above the multistart's
+value restarts the fit from there. The same trace gives the profile interval
+of \code{\link[=confint.cpb]{confint.cpb()}}. Two parameterizations of the same design (say, treatment
+and sum contrasts) can still settle on different teeth of this surface, with
+log-likelihoods differing by the order of the jumps; unit intercepts belong
+in the fixed-effects estimator \code{\link[=cpb_fe]{cpb_fe()}}, which solves each of them exactly
+(a pooled fit with many dummy columns can stop short of it). The numerical
+Hessian is unreliable on
+such a surface, so inference uses a cold-multistart bootstrap for the
+coefficients (validated to nominal coverage) and a profile-likelihood interval
+for \eqn{\alpha} (see \code{\link[=alpha_confint]{alpha_confint()}}; first-order by default, calibrated
+by parametric bootstrap after \code{\link[=calibrate_alpha]{calibrate_alpha()}}).
+
+Runtime: a fit with \code{se = "none"} takes a few seconds at 500 rows and about
+fifteen at 2,000 on one core, the nine starts, the profile trace, and the
+scan in \code{alpha} included. The bootstrap
+replicates are maximized by the multistart without the profile trace (about
+a third of a second each at 500 rows), so a replicate can sit on a different
+tooth from the point estimate by the order of the jumps; \code{cores} runs them in
+parallel.
 }
 \examples{
 set.seed(1)
-n <- 300; x <- rnorm(n)
+n <- 200; x <- rnorm(n)
 N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1)
 y <- rbinom(n, N, 0.5)                 # underdispersed (var/mean approx 0.5)
 d <- data.frame(y = y, x = x)
@@ -91,5 +134,6 @@ King, G. (1989). Variance specification in event count models.
 \emph{American Journal of Political Science}, 33(3), 762-784.
 }
 \seealso{
-\code{\link[=ud_screen]{ud_screen()}}, \code{\link[=confint.cpb]{confint.cpb()}}, \code{\link[=predict.cpb]{predict.cpb()}}, \code{\link[=implied_ceiling]{implied_ceiling()}}
+\code{\link[=ud_screen]{ud_screen()}}, \code{\link[=confint.cpb]{confint.cpb()}}, \code{\link[=predict.cpb]{predict.cpb()}}, \code{\link[=implied_ceiling]{implied_ceiling()}},
+\code{\link[=dispersion_test]{dispersion_test()}}
 }

@@ -12,6 +12,8 @@ gec(
   B = 500,
   cluster = NULL,
   offset = NULL,
+  weights = NULL,
+  cores = 1L,
   max.support = 500,
   maxit = 20000,
   reltol = 1e-08
@@ -35,6 +37,11 @@ vector) for a cluster/block bootstrap; see \code{\link[=cpb]{cpb()}}.}
 \item{offset}{Optional offset on the log-mean scale (an exposure): a numeric
 vector or the name of a column in \code{data}.}
 
+\item{weights}{Optional frequency weights (a numeric vector or a column name);
+see \code{\link[=cpb]{cpb()}}.}
+
+\item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
+
 \item{max.support}{Guard on the maximum evaluated support.}
 
 \item{maxit, reltol}{Optimizer controls.}
@@ -52,7 +59,15 @@ member; the continuous parameter binomial is this cell), equidispersion
 binomial). Unlike \code{\link[=cpb]{cpb()}}, which fixes the direction of dispersion to
 under, \code{gec()} lets the data choose. The Katz recursion delivers exact first
 and second moments---the Winkelmann--Signorino--King correction realized
-directly---and the likelihood is evaluated in C++.
+directly on an unbounded support---and the likelihood is evaluated in C++.
+For \code{delta < 1} the support is finite and the renormalized distribution's
+mean and variance equal \verb{exp(x'b)} and \verb{delta * exp(x'b)} only when
+\verb{exp(x'b)/(1 - delta)} is an integer, so \verb{exp(x'b)} is the rate parameter of
+the recursion, the fitted mean is computed exactly from the pmf, and \code{delta}
+is the Katz dispersion parameter (the variance-to-mean ratio on an unbounded
+support). The optimizer works on covariates scaled to unit standard
+deviation and maps the coefficients back, so the fit does not depend on the
+covariates' units.
 }
 \examples{
 set.seed(1); x <- rnorm(400)
@@ -60,5 +75,5 @@ y <- rpois(400, exp(1 + 0.5 * x))
 gec(y ~ x, data = data.frame(y = y, x = x), se = "none")
 }
 \seealso{
-\code{\link[=cpb]{cpb()}}, \code{\link[=compare_dispersion]{compare_dispersion()}}
+\code{\link[=cpb]{cpb()}}, \code{\link[=compare_dispersion]{compare_dispersion()}}, \code{\link[=dispersion_test]{dispersion_test()}}
 }

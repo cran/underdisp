@@ -3,11 +3,14 @@
 \name{implied_ceiling}
 \alias{implied_ceiling}
 \alias{implied_ceiling.cpb}
+\alias{implied_ceiling.cpb_fe}
 \title{Implied ceiling with a profile-likelihood interval}
 \usage{
 implied_ceiling(object, ...)
 
 \method{implied_ceiling}{cpb}(object, newdata = NULL, level = 0.95, ...)
+
+\method{implied_ceiling}{cpb_fe}(object, newdata = NULL, level = 0.95, ...)
 }
 \arguments{
 \item{object}{A \code{"cpb"} object.}
@@ -22,10 +25,13 @@ implied_ceiling(object, ...)
 A data frame with \code{lambda}, \code{ceiling}, and \code{lower}/\code{upper} bounds.
 }
 \description{
-Returns the observation- (or profile-) specific ceiling lambda/(1-alpha), with an
-interval propagating the profile-likelihood uncertainty in \code{alpha} at the fitted
-mean. (Coefficient uncertainty in lambda is not propagated here; use
-\code{\link[=first_difference]{first_difference()}} with \code{quantity = "ceiling"} for a fully bootstrapped contrast.)
+Returns the observation- (or profile-) specific ceiling lambda/(1-alpha), with
+bounds that carry the limits of the interval for \code{alpha} (see \code{\link[=alpha_confint]{alpha_confint()}};
+calibrated when the fit went through \code{\link[=calibrate_alpha]{calibrate_alpha()}}) to the ceiling at the
+fitted rate. The rate is held at its estimate: coefficient uncertainty in lambda
+is not propagated, so the bounds are not a confidence interval for the ceiling;
+use \code{\link[=first_difference]{first_difference()}} with \code{quantity = "ceiling"} for a fully bootstrapped
+contrast.
 }
 \examples{
 set.seed(6); x <- rnorm(300)

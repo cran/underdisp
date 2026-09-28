@@ -1,12 +1,31 @@
 #' underdisp: Diagnostics and Models for Underdispersed Count Data
 #'
 #' Detect and model underdispersion (conditional variance below the conditional
-#' mean) in count data. The package provides a screening diagnostic
-#' ([ud_screen()]), the continuous parameter binomial regression model
-#' ([cpb()]) with a zero-truncated variant, validated bootstrap and
-#' profile-likelihood inference, a family-comparison helper
-#' ([compare_dispersion()]), and King-style quantities of interest
-#' ([predict.cpb()], [implied_ceiling()], [first_difference()]).
+#' mean) in count data.
+#'
+#' @section Screening and diagnostics:
+#' [ud_screen()] (the zero-truncated-Poisson at-risk screen with calibrated or
+#' parametric-bootstrap thresholds), [dispersion_test()] (regression-adjusted
+#' tests of equidispersion), [dispersion_profile()] (the conditional
+#' variance-to-mean curve against each family's implied curve),
+#' [compare_dispersion()], [zi_test()], [rootogram()], [pit_hist()].
+#'
+#' @section Estimators:
+#' The hard-ceiling family [cpb()] / [cpb_fe()] and the free-dispersion family
+#' [gec()] / [gec_fe()], with hurdle and zero-inflated forms
+#' ([hurdle_cpb()], [zi_cpb()], [hurdle_gec()], [zi_gec()]); the matched count
+#' families through one interface, [count_reg()], [hurdle_count()],
+#' [zi_count()] (Poisson, negative binomial, COM-Poisson in the rate and the
+#' mean parameterization, generalized Poisson, gamma-count, double Poisson),
+#' all with offsets, frequency weights, fixed effects, and analytic, robust,
+#' cluster, or bootstrap inference.
+#'
+#' @section Comparison and quantities of interest:
+#' [compare_models()], [score()], [cv_score()]; [predict()],
+#' [implied_ceiling()], [irr()], [first_difference()] (with the
+#' extensive/intensive decomposition for the two-part models), [confint()] for
+#' every class, [simulate()] for DHARMa diagnostics, and broom / texreg /
+#' modelsummary support.
 #'
 #' @keywords internal
 #' @useDynLib underdisp, .registration = TRUE

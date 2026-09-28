@@ -1,0 +1,21 @@
+citHeader("To cite the underdisp package in publications use:")
+
+bibentry(
+  bibtype = "Manual",
+  title   = "underdisp: Diagnostics and Models for Underdispersed Count Data",
+  author  = person("Benjamin E.", "Bagozzi"),
+  year    = "2026",
+  note    = "R package version 0.1.1",
+  url     = "https://CRAN.R-project.org/package=underdisp",
+  textVersion = "Bagozzi, B.E. (2026). underdisp: Diagnostics and Models for Underdispersed Count Data. R package version 0.1.1. https://CRAN.R-project.org/package=underdisp"
+)
+
+bibentry(
+  bibtype = "Unpublished",
+  title   = "Revisiting underdispersion in political science",
+  author  = person("Benjamin E.", "Bagozzi"),
+  year    = "2026",
+  note    = "Working paper",
+  textVersion = "Bagozzi, B.E. (2026). Revisiting underdispersion in political science. Working paper.",
+  header  = "The at-risk screen, the calibrated threshold, and the fixed-effects results are developed in:"
+)

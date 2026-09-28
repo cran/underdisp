@@ -1,34 +1,46 @@
 Package: underdisp
 Type: Package
 Title: Diagnostics and Models for Underdispersed Count Data
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: person("Benjamin E.", "Bagozzi", email = "bagozzib@udel.edu",
-    role = c("aut", "cre"))
+    role = c("aut", "cre"), comment = c(ORCID = "0000-0002-6233-6453"))
 Description: Tools for detecting and modeling underdispersion in count data
-    (conditional variance below the conditional mean), a phenomenon overlooked by
-    the Poisson and negative binomial defaults. Provides a screening diagnostic that
-    benchmarks at-risk dispersion against a zero-truncated Poisson; the continuous
-    parameter binomial (CPB) regression and its zero-truncated variant, with an
-    interpretable observation-specific bound and high-dimensional fixed-effects support;
-    validated bootstrap (for coefficients) and profile-likelihood (for the dispersion
-    parameter) inference; and quantities of interest including predicted probabilities
-    and the implied ceiling. The likelihood is implemented in C++ for speed.
+    (conditional variance below the conditional mean), the case the Poisson and
+    negative binomial defaults cannot represent. Provides a screening diagnostic
+    that benchmarks at-risk dispersion against a zero-truncated Poisson,
+    regression-adjusted tests of equidispersion, and a dispersion profile that
+    compares the variance-to-mean curves of competing families against the data;
+    the continuous parameter binomial (CPB) and generalized event count (Katz)
+    regressions with zero-truncated, hurdle, and zero-inflated forms and
+    high-dimensional fixed effects with a split-panel jackknife bias correction;
+    matched Poisson, negative binomial, COM-Poisson (rate- and mean-parameterized),
+    generalized Poisson, gamma-count, and double Poisson regressions through the
+    same interface, with frequency weights, offsets, and analytic, robust, and
+    cluster-robust standard errors; bootstrap and profile-likelihood inference;
+    proper scoring rules, rootograms, PIT histograms, and simulation methods; and
+    quantities of interest including predicted distributions, the implied ceiling,
+    rate ratios, and first differences with an extensive/intensive decomposition.
+    The likelihoods are implemented in C++.
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
 Depends: R (>= 4.0)
-Imports: Rcpp, stats, MASS, VGAM, graphics, methods, numDeriv
+Imports: Rcpp, stats, MASS, VGAM, graphics, methods, numDeriv, parallel
 LinkingTo: Rcpp
 Suggests: sandwich, pscl, DHARMa, testthat (>= 3.0.0), knitr,
-        rmarkdown, broom, modelsummary, texreg
+        rmarkdown, broom, modelsummary, texreg, gamlss.dist, rmutil,
+        glmmTMB, COMPoissonReg, Ecdat, wooldridge
 VignetteBuilder: knitr
 RoxygenNote: 7.3.3
-URL: https://github.com/bagozzib/underdisp
+URL: https://CRAN.R-project.org/package=underdisp,
+        https://github.com/bagozzib/underdisp,
+        https://bagozzib.github.io/underdisp/
 BugReports: https://github.com/bagozzib/underdisp/issues
 Config/testthat/edition: 3
 NeedsCompilation: yes
-Packaged: 2026-08-19 12:44:18 UTC; bagoz
-Author: Benjamin E. Bagozzi [aut, cre]
+Packaged: 2026-09-28 10:52:15 UTC; bagoz
+Author: Benjamin E. Bagozzi [aut, cre] (ORCID:
+    <https://orcid.org/0000-0002-6233-6453>)
 Maintainer: Benjamin E. Bagozzi <bagozzib@udel.edu>
 Repository: CRAN
-Date/Publication: 2026-08-20 16:40:02 UTC
+Date/Publication: 2026-09-28 15:30:02 UTC

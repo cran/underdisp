@@ -2,20 +2,21 @@
 % Please edit documentation in R/glm_families.R
 \name{zi_count}
 \alias{zi_count}
-\title{Zero-inflated Poisson / negative-binomial regression (matched CPB baseline)}
+\title{Zero-inflated count regression for the matched count families}
 \usage{
 zi_count(
   formula,
   data,
-  family = c("poisson", "negbin", "compois"),
+  family = c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount",
+    "doublepois"),
   zero = NULL,
   fe = NULL,
   zero_fe = NULL,
   link = c("logit", "probit", "cloglog"),
   offset = NULL,
+  weights = NULL,
   se = c("analytic", "robust", "cluster", "none"),
-  cluster = NULL,
-  ...
+  cluster = NULL
 )
 }
 \arguments{
@@ -23,8 +24,7 @@ zi_count(
 
 \item{data}{A data frame.}
 
-\item{family}{\code{"poisson"}, \code{"negbin"}, or \code{"compois"} for the count component;
-see \code{\link[=count_reg]{count_reg()}} for the COM-Poisson parameterization.}
+\item{family}{The count-component family; see \code{\link[=count_reg]{count_reg()}}.}
 
 \item{zero}{Optional one-sided formula for the inflation (structural-zero)
 model; defaults to the count right-hand side.}
@@ -39,21 +39,24 @@ model; defaults to the count right-hand side.}
 probability of a \emph{structural zero}.}
 
 \item{offset}{Optional offset for the count component, on the linear-predictor
-(log) scale (log-mean for Poisson/NB, log-rate for COM-Poisson): a numeric
-vector or the name of a column in \code{data}.}
+(log) scale: a numeric vector or the name of a column in \code{data}.}
+
+\item{weights}{Optional frequency weights (a numeric vector or a column name);
+see \code{\link[=count_reg]{count_reg()}}.}
 
 \item{se, cluster}{Standard-error type and optional cluster; see \code{\link[=count_reg]{count_reg()}}.}
-
-\item{...}{Unused.}
 }
 \value{
-An object of class \code{"zi_count"}.
+An object of class \code{"zi_count"}; \verb{$fitted.values} is the marginal
+mean \verb{(1 - pi) E(Y | count component)} that \code{fitted()} returns, and \verb{$mu}
+the count component's natural parameter.
 }
 \description{
-Fits a structural-zero mixture with a Poisson or negative-binomial count
-component, the count analogue of \code{\link[=zi_cpb]{zi_cpb()}}. The count component uses a log
-link (on the mean for Poisson/NB, on the rate \eqn{\lambda} for COM-Poisson)
-and the inflation probability a link set by \code{link}. Returned as a \code{"zi_count"}
+Fits a structural-zero mixture whose count component comes from any of the
+package's count families (see \code{\link[=count_reg]{count_reg()}}, Families), the count analogue
+of \code{\link[=zi_cpb]{zi_cpb()}}. The count component uses a log link (on the mean for the
+mean-parameterized families, on the rate \eqn{\lambda} for \code{"compois"}) and
+the inflation probability a link set by \code{link}. Returned as a \code{"zi_count"}
 object that \code{\link[=compare_models]{compare_models()}} and \code{\link[=score]{score()}} accept.
 }
 \examples{

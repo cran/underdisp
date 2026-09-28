@@ -15,6 +15,8 @@ hurdle_cpb(
   cluster = NULL,
   se = c("none", "bootstrap"),
   B = 500,
+  weights = NULL,
+  cores = 1L,
   ...
 )
 }
@@ -50,6 +52,11 @@ logit are available directly via
 \item{se}{Inference for the intensity coefficients: \code{"none"} or \code{"bootstrap"}.}
 
 \item{B}{Bootstrap replicates when \code{se = "bootstrap"}.}
+
+\item{weights}{Optional frequency weights (a numeric vector or a column name),
+applied to both margins; see \code{\link[=cpb]{cpb()}}.}
+
+\item{cores}{Worker processes for the intensity bootstrap; see \code{\link[=cpb]{cpb()}}.}
 
 \item{...}{Passed to \code{\link[=cpb]{cpb()}} or \code{\link[=cpb_fe]{cpb_fe()}}.}
 }

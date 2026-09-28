@@ -19,9 +19,9 @@ rgec(n, lambda, delta, max.support = 500)
 \arguments{
 \item{x, q}{Vector of quantiles (non-negative integers).}
 
-\item{lambda}{Rate/mean parameter (scalar or vector, recycled).}
+\item{lambda}{Rate parameter (scalar or vector, recycled).}
 
-\item{delta}{Dispersion (variance-to-mean ratio).}
+\item{delta}{Katz dispersion parameter (scalar).}
 
 \item{max.support}{Guard on the evaluated support.}
 
@@ -39,9 +39,14 @@ vector of count draws.
 }
 \description{
 Density, distribution, quantile, and random generation for the King (1989)
-generalized event count model with rate \code{lambda} (the mean) and dispersion
-\code{delta} (the variance-to-mean ratio: \verb{< 1} underdispersed, \verb{= 1} Poisson,
-\verb{> 1} overdispersed). Consistent with the estimator \code{\link[=gec]{gec()}}.
+generalized event count model with rate \code{lambda} and Katz dispersion
+\code{delta} (\verb{< 1} underdispersed, \verb{= 1} Poisson, \verb{> 1} overdispersed).
+On an unbounded support (\code{delta >= 1}) the mean is \code{lambda} and the
+variance-to-mean ratio is \code{delta} exactly; for \code{delta < 1} the support is
+finite and the renormalized distribution's mean and variance equal those
+values only when \code{lambda/(1 - delta)} is an integer (the exact moments are
+finite sums of the pmf, as \code{count_reg()}'s siblings report them).
+Consistent with the estimator \code{\link[=gec]{gec()}}.
 }
 \examples{
 dgec(0:5, lambda = 3, delta = 0.7)

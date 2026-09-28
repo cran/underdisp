@@ -20,4 +20,12 @@ test_that("texreg extract methods build a texreg object", {
   tr <- texreg::extract(cf)
   expect_s4_class(tr, "texreg")
   expect_length(tr@coef, 2L)
+  ## the package's own method answered (broom's fallback would not carry these rows)
+  expect_true(all(c("AIC", "Log Likelihood", "Num. obs.") %in% tr@gof.names))
+  cr <- count_reg(y ~ x, data = data.frame(y = rpois(n, 3), x = x), family = "gammacount")
+  tr2 <- texreg::extract(cr)
+  expect_true("Dispersion (alpha)" %in% tr2@gof.names)
+  out <- withCallingHandlers(utils::capture.output(texreg::screenreg(cr)),
+                             warning = function(w) stop("screenreg warned: ", conditionMessage(w)))
+  expect_true(any(grepl("Num. obs.", out, fixed = TRUE)))
 })

@@ -7,23 +7,50 @@
 \title{underdisp: Diagnostics and Models for Underdispersed Count Data}
 \description{
 Detect and model underdispersion (conditional variance below the conditional
-mean) in count data. The package provides a screening diagnostic
-(\code{\link[=ud_screen]{ud_screen()}}), the continuous parameter binomial regression model
-(\code{\link[=cpb]{cpb()}}) with a zero-truncated variant, validated bootstrap and
-profile-likelihood inference, a family-comparison helper
-(\code{\link[=compare_dispersion]{compare_dispersion()}}), and King-style quantities of interest
-(\code{\link[=predict.cpb]{predict.cpb()}}, \code{\link[=implied_ceiling]{implied_ceiling()}}, \code{\link[=first_difference]{first_difference()}}).
+mean) in count data.
 }
+\section{Screening and diagnostics}{
+
+\code{\link[=ud_screen]{ud_screen()}} (the zero-truncated-Poisson at-risk screen with calibrated or
+parametric-bootstrap thresholds), \code{\link[=dispersion_test]{dispersion_test()}} (regression-adjusted
+tests of equidispersion), \code{\link[=dispersion_profile]{dispersion_profile()}} (the conditional
+variance-to-mean curve against each family's implied curve),
+\code{\link[=compare_dispersion]{compare_dispersion()}}, \code{\link[=zi_test]{zi_test()}}, \code{\link[=rootogram]{rootogram()}}, \code{\link[=pit_hist]{pit_hist()}}.
+}
+
+\section{Estimators}{
+
+The hard-ceiling family \code{\link[=cpb]{cpb()}} / \code{\link[=cpb_fe]{cpb_fe()}} and the free-dispersion family
+\code{\link[=gec]{gec()}} / \code{\link[=gec_fe]{gec_fe()}}, with hurdle and zero-inflated forms
+(\code{\link[=hurdle_cpb]{hurdle_cpb()}}, \code{\link[=zi_cpb]{zi_cpb()}}, \code{\link[=hurdle_gec]{hurdle_gec()}}, \code{\link[=zi_gec]{zi_gec()}}); the matched count
+families through one interface, \code{\link[=count_reg]{count_reg()}}, \code{\link[=hurdle_count]{hurdle_count()}},
+\code{\link[=zi_count]{zi_count()}} (Poisson, negative binomial, COM-Poisson in the rate and the
+mean parameterization, generalized Poisson, gamma-count, double Poisson),
+all with offsets, frequency weights, fixed effects, and analytic, robust,
+cluster, or bootstrap inference.
+}
+
+\section{Comparison and quantities of interest}{
+
+\code{\link[=compare_models]{compare_models()}}, \code{\link[=score]{score()}}, \code{\link[=cv_score]{cv_score()}}; \code{\link[=predict]{predict()}},
+\code{\link[=implied_ceiling]{implied_ceiling()}}, \code{\link[=irr]{irr()}}, \code{\link[=first_difference]{first_difference()}} (with the
+extensive/intensive decomposition for the two-part models), \code{\link[=confint]{confint()}} for
+every class, \code{\link[=simulate]{simulate()}} for DHARMa diagnostics, and broom / texreg /
+modelsummary support.
+}
+
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://CRAN.R-project.org/package=underdisp}
   \item \url{https://github.com/bagozzib/underdisp}
+  \item \url{https://bagozzib.github.io/underdisp/}
   \item Report bugs at \url{https://github.com/bagozzib/underdisp/issues}
 }
 
 }
 \author{
-\strong{Maintainer}: Benjamin E. Bagozzi \email{bagozzib@udel.edu}
+\strong{Maintainer}: Benjamin E. Bagozzi \email{bagozzib@udel.edu} (\href{https://orcid.org/0000-0002-6233-6453}{ORCID})
 
 }
 \keyword{internal}

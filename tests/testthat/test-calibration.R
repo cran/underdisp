@@ -22,6 +22,16 @@ test_that("score, rootogram, and pit_hist work on a CPB fit", {
   expect_true(all(ph >= 0))
 })
 
+test_that("the PIT histogram does not depend on the order of the rows", {
+  set.seed(8); x <- rnorm(300)
+  d <- data.frame(y = rpois(300, exp(0.1 + 0.5 * x)), x = x)
+  o <- order(d$y)                                        # the zeros first, then the positive counts
+  f1 <- count_reg(y ~ x, d, family = "poisson", se = "none")
+  f2 <- count_reg(y ~ x, d[o, ], family = "poisson", se = "none")
+  pdf(file = tempfile(fileext = ".pdf")); on.exit(grDevices::dev.off(), add = TRUE)
+  expect_equal(pit_hist(f1), pit_hist(f2), tolerance = 1e-6)
+})
+
 test_that("score prefers the correct model to a misspecified Poisson", {
   set.seed(3)
   y <- rcpb(800, lambda = 3, alpha = 0.5)

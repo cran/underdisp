@@ -2,7 +2,7 @@
 % Please edit documentation in R/glm_families.R
 \name{predict.count_reg}
 \alias{predict.count_reg}
-\title{Predictions from a matched Poisson/NB/COM-Poisson fit}
+\title{Predictions from a matched count-family fit}
 \usage{
 \method{predict}{count_reg}(
   object,
@@ -18,7 +18,8 @@
 
 \item{newdata}{Optional data frame of covariate profiles.}
 
-\item{type}{\code{"response"} (the mean E(Y)), \code{"link"} (the linear predictor), or
+\item{type}{\code{"response"} (the mean E(Y); for a zero-truncated fit the
+conditional mean E(Y | Y > 0)), \code{"link"} (the linear predictor), or
 \code{"prob"} (P(Y = \code{at}); for a zero-truncated fit this is P(Y = \code{at} | Y > 0)).}
 
 \item{at}{Count value for \code{type = "prob"}.}
@@ -32,5 +33,5 @@ column name in \code{newdata}.}
 A numeric vector.
 }
 \description{
-Predictions from a matched Poisson/NB/COM-Poisson fit
+Predictions from a matched count-family fit
 }

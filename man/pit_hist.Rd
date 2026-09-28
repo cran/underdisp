@@ -14,7 +14,8 @@ pit_hist(
 )
 }
 \arguments{
-\item{fit}{A \code{"cpb"} or \code{"hurdle_cpb"} object.}
+\item{fit}{A fitted \code{underdisp} count model (any class \code{\link[=score]{score()}} takes); a
+fit with frequency weights counts each row as many times as its weight.}
 
 \item{bins}{Number of histogram bins.}
 

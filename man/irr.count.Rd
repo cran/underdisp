@@ -38,10 +38,17 @@
 }
 \value{
 A \code{"ud_irr"} data frame -- the package-wide ratio contract shared by
-every \code{irr()} method: columns \code{term}, \code{equation} (\code{"count"} or
-\code{"binary"}), \code{ratio} (\code{"IRR"} or \code{"OR"}), \code{estimate}, \code{lower}, \code{upper},
-and \code{method} (the interval source; \code{"none"} with \code{NA} bounds when no
-covariance is available). Two-part models stack both equations.
+every \code{irr()} method: columns \code{term}, \code{equation} (\code{"count"},
+\code{"participation"} for a hurdle's binary stage, or \code{"inflation"} for a
+zero-inflated model's structural-zero stage; the two point in opposite
+directions, an odds ratio above one raising P(Y > 0) in the first and
+P(structural zero) in the second), \code{ratio} (\code{"IRR"} or \code{"OR"}),
+\code{estimate}, \code{lower}, \code{upper}, and \code{method} (the interval source; \code{"none"}
+with \code{NA} bounds when no covariance is available). Two-part models stack
+both equations. The \code{IRR} rows are ratios of the rate parameter
+\eqn{\exp(\beta)}; for the CPB and the underdispersed GEC the ratio of
+fitted means differs from it by the support renormalization, and
+\code{\link[=first_difference]{first_difference()}} reports the exact mean contrast.
 }
 \description{
 Rate ratios (\code{exp} of the count/intensity coefficients, column \code{IRR}) and, for

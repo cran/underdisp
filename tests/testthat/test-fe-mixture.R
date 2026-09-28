@@ -3,8 +3,10 @@ test_that("hurdle_cpb absorbs intensity fixed effects", {
   set.seed(1)
   d <- do.call(rbind, lapply(1:60, function(u) {
     fe_u <- rnorm(1, 0, 0.6); x <- rnorm(25); z <- rnorm(25)
+    ## these rates are low enough that some ceilings fall below 1, which rcpb() reports; the test is about the
+    ## fixed-effects machinery, so the simulator's warning is muffled here
     data.frame(unit = u, x = x, z = z,
-               y = rhurdle_cpb(25, exp(fe_u + 0.5 * x), 0.5, plogis(-0.3 + 0.9 * z)))
+               y = suppressWarnings(rhurdle_cpb(25, exp(fe_u + 0.5 * x), 0.5, plogis(-0.3 + 0.9 * z))))
   }))
   hf <- hurdle_cpb(y ~ x, data = d, participation = ~ z, fe = "unit")
   expect_s3_class(hf, "hurdle_cpb")

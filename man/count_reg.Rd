@@ -2,18 +2,19 @@
 % Please edit documentation in R/glm_families.R
 \name{count_reg}
 \alias{count_reg}
-\title{Poisson and negative-binomial count regression (matched CPB baselines)}
+\title{Matched count regressions: Poisson, negative binomial, COM-Poisson, generalized Poisson, gamma-count, double Poisson}
 \usage{
 count_reg(
   formula,
   data,
-  family = c("poisson", "negbin", "compois"),
+  family = c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount",
+    "doublepois"),
   truncated = FALSE,
   fe = NULL,
   offset = NULL,
+  weights = NULL,
   se = c("analytic", "robust", "cluster", "none"),
-  cluster = NULL,
-  ...
+  cluster = NULL
 )
 }
 \arguments{
@@ -21,13 +22,8 @@ count_reg(
 
 \item{data}{A data frame.}
 
-\item{family}{\code{"poisson"}, \code{"negbin"} (negative binomial), or \code{"compois"}
-(Conway--Maxwell--Poisson). For \code{"compois"} the coefficients are on the
-log-rate scale (\eqn{\log\lambda = x'\beta}; the rate \eqn{\lambda} is
-\emph{not} the mean, though \code{predict(type = "response")} and \code{fitted()}
-return the mean), and the shape in \verb{$theta} is the dispersion \eqn{\nu}
-(\eqn{\nu > 1} underdispersed, \eqn{\nu = 1} Poisson, \eqn{\nu < 1}
-overdispersed).}
+\item{family}{One of \code{"poisson"}, \code{"negbin"}, \code{"compois"}, \code{"mpcmp"},
+\code{"genpois"}, \code{"gammacount"}, \code{"doublepois"} (see Families).}
 
 \item{truncated}{Logical; if \code{TRUE}, fit the zero-truncated form (requires all
 \code{Y >= 1}), the count analogue of the CPB's zero-truncated default.}
@@ -38,41 +34,104 @@ overdispersed).}
 fixed effects.}
 
 \item{offset}{Optional offset entered on the linear-predictor (log) scale --
-the log-mean for \code{"poisson"}/\code{"negbin"}, the log-rate (\eqn{\log\lambda}) for
-\code{"compois"}. A numeric vector or the name of a column in \code{data}, e.g.
-\eqn{\log(\text{exposure})}
-so the model becomes a rate model.}
+the log-mean for the mean-parameterized families, the log-rate
+(\eqn{\log\lambda}) for \code{"compois"}. A numeric vector or the name of a
+column in \code{data}, e.g. \eqn{\log(\text{exposure})} so the model becomes a
+rate model.}
+
+\item{weights}{Optional frequency weights: a numeric vector or the name of a
+column in \code{data}. A weight of \eqn{w_i} is equivalent to \eqn{w_i} copies of
+row \eqn{i} in the log-likelihood, the information, and the score products,
+and \code{nobs()} returns the weight total. Survey (probability) weights call
+for \code{se = "robust"} or \code{se = "cluster"}.}
 
 \item{se}{Standard errors: \code{"analytic"} (inverse information, default),
 \code{"robust"} (heteroskedasticity-consistent sandwich), \code{"cluster"}
 (cluster-robust; needs \code{cluster}), or \code{"none"}.}
 
 \item{cluster}{Optional cluster identifier (a column name in \code{data} or a
-vector aligned to its rows) for \code{se = "cluster"}.}
-
-\item{...}{Unused.}
+vector aligned to its rows) for \code{se = "cluster"}; supplying it selects
+\code{se = "cluster"} unless \code{se} is given explicitly.}
 }
 \value{
 An object of class \code{"count_reg"}. The component \verb{$theta} holds the
-shape parameter: the negative-binomial size for \code{"negbin"}, the COM-Poisson
-dispersion \eqn{\nu} for \code{"compois"}, and \code{NA} for \code{"poisson"}.
+dispersion parameter on its natural scale (the negative-binomial size, the
+COM-Poisson \eqn{\nu}, the generalized-Poisson \eqn{\lambda}, the
+gamma-count \eqn{\alpha}, the double-Poisson \eqn{\theta}; \code{NA} for the
+Poisson); \verb{$fitted.values} and \verb{$residuals} are on the mean scale (the
+conditional mean E(Y | Y >= 1) for a zero-truncated fit), as \code{fitted()} and
+\code{residuals()} return them, and \verb{$mu} is the family's natural parameter
+\verb{exp(offset + x'b)}.
 }
 \description{
-Fits a Poisson or negative-binomial regression with a log link, optionally
-zero-truncated and/or with unit fixed effects, returning an object that
-\code{\link[=compare_models]{compare_models()}}, \code{\link[=score]{score()}}, and the \pkg{broom} methods treat on the same
-footing as a \code{\link[=cpb]{cpb()}} or \code{\link[=gec]{gec()}} fit. This is the matched baseline for the
-underdispersed models: it exists so a Poisson/NB can be compared to a CPB with
-identical degrees-of-freedom, log-likelihood, proper-score, and
-robust-standard-error accounting, rather than reconciled across packages.
+Fits a count regression with a log link from any of the package's count
+families, optionally zero-truncated and/or with unit fixed effects, returning
+an object that \code{\link[=compare_models]{compare_models()}}, \code{\link[=score]{score()}}, \code{\link[=dispersion_test]{dispersion_test()}},
+\code{\link[=dispersion_profile]{dispersion_profile()}}, and the \pkg{broom} methods treat on the same footing
+as a \code{\link[=cpb]{cpb()}} or \code{\link[=gec]{gec()}} fit. The families share one interface, so a
+gamma-count and a COM-Poisson can be compared to a CPB with identical
+degrees-of-freedom, log-likelihood, proper-score, weight, and
+robust-standard-error accounting rather than reconciled across packages.
 }
+\section{Families}{
+
+\itemize{
+\item \code{"poisson"}: the equidispersed baseline.
+\item \code{"negbin"}: negative binomial (overdispersion only); \verb{$theta} is the size.
+\item \code{"compois"}: the classical Conway--Maxwell--Poisson in its rate
+parameterization, \eqn{\log\lambda = x'\beta}. The rate \eqn{\lambda} is
+not the mean (though \code{predict(type = "response")} and \code{fitted()} return the
+mean); \verb{$theta} is the dispersion \eqn{\nu} (\eqn{\nu > 1} underdispersed,
+\eqn{\nu = 1} Poisson, \eqn{\nu < 1} overdispersed).
+\item \code{"mpcmp"}: the COM-Poisson in Huang's (2017) mean parameterization,
+\eqn{\log\mathrm{E}(Y) = x'\beta}, with the same dispersion \eqn{\nu}; the
+coefficients are effects on the log mean and rate ratios are exact.
+\item \code{"genpois"}: the Consul--Jain generalized Poisson with constant dispersion
+\eqn{\lambda \in (-1, 1)} and mean \eqn{\mu = \exp(x'\beta)}, so
+\eqn{\mathrm{Var}/\mathrm{Mean} = 1/(1-\lambda)^2}; \eqn{\lambda < 0} is
+underdispersion, on a finite support that the pmf is renormalized over
+(see \link{genpois-distribution}).
+\item \code{"gammacount"}: Winkelmann's (1995) gamma-count renewal-process model,
+underdispersed when the waiting times between events are more regular than
+exponential (\eqn{\alpha > 1}); \eqn{\exp(x'\beta)} is the long-run event
+rate and the exact mean is reported (see \link{gammacount-distribution}).
+\item \code{"doublepois"}: Efron's (1986) double Poisson with the exact normalizing
+constant, \eqn{\theta > 1} underdispersed (see \link{doublepois-distribution}).
+}
+
+The Poisson is the equidispersed member of every family, so
+\code{\link[=dispersion_test]{dispersion_test()}} tests each family's dispersion parameter against it, and
+\code{\link[=dispersion_profile]{dispersion_profile()}} compares the families' implied variance-to-mean curves
+against the data.
+
+Runtime: the Poisson, negative binomial, gamma-count, and double Poisson and
+generalized Poisson families fit in under a second at a few hundred rows; the
+COM-Poisson families evaluate a normalizing sum per observation (and the
+mean parameterization solves a root per observation), so they take seconds
+at a few hundred rows and minutes at several thousand; \code{se = "robust"} and
+\code{"cluster"} add numerical scores at the same cost per parameter.
+}
+
 \examples{
 set.seed(1); n <- 400; x <- rnorm(n)
-y <- rpois(n, exp(1 + 0.5 * x))
-m <- count_reg(y ~ x, data = data.frame(y = y, x = x), family = "poisson")
-compare_models(pois = m,
-               nb = count_reg(y ~ x, data = data.frame(y = y, x = x), family = "negbin"))
+y <- rgammacount(n, exp(1 + 0.5 * x), alpha = 2)     # regular event timing
+d <- data.frame(y = y, x = x)
+m <- count_reg(y ~ x, data = d, family = "gammacount")
+m
+compare_models(poisson = count_reg(y ~ x, d, family = "poisson"), gammacount = m)
+}
+\references{
+Huang, A. (2017). Mean-parametrized Conway--Maxwell--Poisson
+regression models for dispersed counts. \emph{Statistical Modelling},
+17(6), 359-380. Winkelmann, R. (1995). Duration dependence and dispersion
+in count-data models. \emph{Journal of Business & Economic Statistics},
+13(4), 467-474. Efron, B. (1986). Double exponential families and their
+use in generalized linear regression. \emph{Journal of the American
+Statistical Association}, 81(395), 709-721. Consul, P. C. and Famoye, F.
+(1992). Generalized Poisson regression model. \emph{Communications in
+Statistics -- Theory and Methods}, 21(1), 89-109.
 }
 \seealso{
-\code{\link[=cpb]{cpb()}}, \code{\link[=compare_models]{compare_models()}}, \code{\link[=hurdle_count]{hurdle_count()}}, \code{\link[=zi_count]{zi_count()}}
+\code{\link[=cpb]{cpb()}}, \code{\link[=gec]{gec()}}, \code{\link[=compare_models]{compare_models()}}, \code{\link[=dispersion_test]{dispersion_test()}},
+\code{\link[=dispersion_profile]{dispersion_profile()}}, \code{\link[=hurdle_count]{hurdle_count()}}, \code{\link[=zi_count]{zi_count()}}
 }

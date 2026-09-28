@@ -22,6 +22,15 @@ An integer vector of counts.
 Draws counts from the continuous parameter binomial (CPB) or its
 zero-truncated variant.
 }
+\details{
+The support of the CPB is \verb{0, ..., floor(lambda / (1 - alpha))}. A rate
+whose ceiling \code{lambda / (1 - alpha)} is below 1 has the support \code{{0}}, so its
+zero-truncated distribution does not exist. With \code{truncated = TRUE} such a
+draw is set to 1 and a warning reports how many there were: the stated
+parameters give that count probability zero, so data simulated this way are
+not data from the model (in a simulation study, keep every ceiling at 1 or
+above).
+}
 \examples{
 set.seed(1)
 table(rcpb(1000, lambda = 3, alpha = 0.5))

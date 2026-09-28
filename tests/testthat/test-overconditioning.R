@@ -3,6 +3,8 @@
 ## verdict as diagnostic (parameter share of positives >= 0.10) and recommends
 ## the bootstrap threshold; (3) an ordinary design carries no flag.
 
+testthat::skip_on_cran()   # validation battery: runs in the package's CI (NOT_CRAN = true), not on CRAN
+
 test_that("saturating design skips the at-risk screen and says why", {
   set.seed(11)
   n <- 40

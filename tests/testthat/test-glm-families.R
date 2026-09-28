@@ -53,8 +53,8 @@ test_that("robust and cluster SE match sandwich", {
                unname(sqrt(diag(sandwich::vcovHC(g, "HC0")))["x"]), tolerance = 1e-3)
   mc <- count_reg(y ~ x, d, family = "poisson", se = "cluster", cluster = cl)
   expect_equal(unname(mc$se.beta["x"]),
-               unname(sqrt(diag(sandwich::vcovCL(g, cluster = cl, cadjust = FALSE)))["x"]),
-               tolerance = 1e-2)
+               unname(sqrt(diag(sandwich::vcovCL(g, cluster = cl)))["x"]),     # sandwich's default G/(G-1), the stated rule
+               tolerance = 1e-3)
 })
 
 test_that("zi_count and hurdle_count match pscl", {

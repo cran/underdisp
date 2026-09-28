@@ -6,7 +6,17 @@
 ## fixed class whitelist and does not yet recognize "cpb".
 ## ---------------------------------------------------------------------------
 
+## Two-part tidy tables: the terms of the two equations repeat, so each is
+## prefixed by its component; modelsummary and friends then lay the table out
+## without a `shape` argument, and the `component` column stays for filtering.
+.two_part_terms <- function(df) { df$term <- paste(df$component, df$term, sep = ":"); df }
+
 #' Tidy a CPB fit (broom method)
+#'
+#' The two-part classes (`hurdle_*`, `zi_*`) return one row per coefficient
+#' in each equation, with a `component` column (the \pkg{broom} convention for
+#' multi-equation models) and the term prefixed by its component, so that
+#' \pkg{modelsummary} lays the table out without a `shape` argument.
 #'
 #' @param x A `"cpb"` object.
 #' @param conf.int If `TRUE`, add `conf.low`/`conf.high` (requires a fit with
@@ -88,7 +98,7 @@ tidy.hurdle_cpb <- function(x, ...) {
          else x$intensity$se.beta
   int <- cbind(component = "intensity", term = names(x$intensity$coefficients),
                .zdf(x$intensity$coefficients, ise))
-  rbind(part, int)
+  .two_part_terms(rbind(part, int))
 }
 
 #' @rdname glance.cpb
@@ -106,8 +116,8 @@ glance.hurdle_cpb <- function(x, ...) {
 tidy.zi_cpb <- function(x, ...) {
   cse <- if (is.null(x$se.beta)) rep(NA_real_, length(x$coefficients)) else x$se.beta
   zse <- if (is.null(x$se.zero)) rep(NA_real_, length(x$zero_coef))    else x$se.zero
-  rbind(cbind(component = "count", term = names(x$coefficients), .zdf(x$coefficients, cse)),
-        cbind(component = "zero",  term = names(x$zero_coef),    .zdf(x$zero_coef, zse)))
+  .two_part_terms(rbind(cbind(component = "count", term = names(x$coefficients), .zdf(x$coefficients, cse)),
+        cbind(component = "zero",  term = names(x$zero_coef),    .zdf(x$zero_coef, zse))))
 }
 
 #' @rdname glance.cpb
@@ -140,7 +150,7 @@ tidy.hurdle_gec <- function(x, ...) {
          else x$intensity$se.beta
   int <- cbind(component = "intensity", term = names(x$intensity$coefficients),
                .zdf(x$intensity$coefficients, ise))
-  rbind(part, int)
+  .two_part_terms(rbind(part, int))
 }
 
 #' @rdname glance.cpb
@@ -157,8 +167,8 @@ glance.hurdle_gec <- function(x, ...) {
 tidy.zi_gec <- function(x, ...) {
   cse <- if (is.null(x$se.beta)) rep(NA_real_, length(x$coefficients)) else x$se.beta
   zse <- if (is.null(x$se.zero)) rep(NA_real_, length(x$zero_coef))    else x$se.zero
-  rbind(cbind(component = "count", term = names(x$coefficients), .zdf(x$coefficients, cse)),
-        cbind(component = "zero",  term = names(x$zero_coef),    .zdf(x$zero_coef, zse)))
+  .two_part_terms(rbind(cbind(component = "count", term = names(x$coefficients), .zdf(x$coefficients, cse)),
+        cbind(component = "zero",  term = names(x$zero_coef),    .zdf(x$zero_coef, zse))))
 }
 
 #' @rdname glance.cpb
@@ -185,8 +195,9 @@ glance.count_reg <- function(x, ...)
 #' @exportS3Method broom::tidy
 tidy.zi_count <- function(x, ...) {
   cse <- if (is.null(x$se.beta)) rep(NA_real_, length(x$coefficients)) else x$se.beta
-  rbind(cbind(component = "count", term = names(x$coefficients), .zdf(x$coefficients, cse)),
-        cbind(component = "zero",  term = names(x$zero.coefficients), .zdf(x$zero.coefficients, NA_real_)))
+  zse <- if (is.null(x$se.zero)) rep(NA_real_, length(x$zero.coefficients)) else x$se.zero
+  .two_part_terms(rbind(cbind(component = "count", term = names(x$coefficients), .zdf(x$coefficients, cse)),
+        cbind(component = "zero",  term = names(x$zero.coefficients), .zdf(x$zero.coefficients, zse))))
 }
 #' @rdname glance.cpb
 #' @exportS3Method broom::glance
@@ -204,7 +215,7 @@ tidy.hurdle_count <- function(x, ...) {
   ise <- if (is.null(x$intensity$se.beta)) rep(NA_real_, length(x$intensity$coefficients)) else x$intensity$se.beta
   int <- cbind(component = "intensity", term = names(x$intensity$coefficients),
                .zdf(x$intensity$coefficients, ise))
-  rbind(part, int)
+  .two_part_terms(rbind(part, int))
 }
 #' @rdname glance.cpb
 #' @exportS3Method broom::glance

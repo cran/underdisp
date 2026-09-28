@@ -4,6 +4,8 @@
 ## inflation fixed effects (zero_fe), and does not collapse the structural-zero
 ## probability toward a degenerate pi -> 0.
 
+testthat::skip_on_cran()   # validation battery: runs in the package's CI (NOT_CRAN = true), not on CRAN
+
 test_that("EM FE-ZI recovers parameters and does not collapse pi -> 0", {
   set.seed(3); nu <- 25; per <- 16; n <- nu * per
   u <- factor(rep(seq_len(nu), each = per)); x <- rnorm(n); z <- rnorm(n)

@@ -3,7 +3,7 @@
 \name{first_difference}
 \alias{first_difference}
 \alias{first_difference.cpb}
-\title{King-style first difference for a CPB fit}
+\title{First difference for a CPB fit}
 \usage{
 first_difference(object, ...)
 
@@ -19,7 +19,9 @@ first_difference(object, ...)
 )
 }
 \arguments{
-\item{object}{A \code{"cpb"} object fit with \code{se = "bootstrap"}.}
+\item{object}{A \code{"cpb"} object. With \code{se = "bootstrap"} at fit time the
+difference carries a bootstrap percentile interval; otherwise the point
+estimate is returned with \code{method = "none"}.}
 
 \item{...}{Further arguments passed to methods; unknown arguments error.}
 
@@ -27,7 +29,8 @@ first_difference(object, ...)
 
 \item{from, to}{The two values of \code{variable} to contrast.}
 
-\item{quantity}{\code{"mean"} (E(Y)), \code{"ceiling"} (lambda/(1-alpha)), or \code{"prob"}
+\item{quantity}{\code{"mean"} (E(Y); for a zero-truncated fit the conditional
+mean E(Y | Y >= 1)), \code{"ceiling"} (lambda/(1-alpha)), or \code{"prob"}
 (P(Y = \code{y})).}
 
 \item{y}{The count value for \code{quantity = "prob"}.}
@@ -43,14 +46,14 @@ interval on the difference (\code{method = "bootstrap (stored)"}). Every
 }
 \description{
 The effect on a quantity of interest of moving one covariate \code{from} one value \code{to}
-another, holding the other covariates at their means, with a bootstrap percentile
-interval (Tomz, Wittenberg & King style, using the model's bootstrap draws).
+another, holding the other covariates at their means, with a percentile
+interval from the model's bootstrap draws when the fit carries them.
 }
 \examples{
 \donttest{
-set.seed(1); x <- rnorm(400)
-N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1); y <- rbinom(400, N, 0.5)
-fit <- cpb(y ~ x, data = data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 200)
+set.seed(1); x <- rnorm(250)
+N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1); y <- rbinom(250, N, 0.5)
+fit <- cpb(y ~ x, data = data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 60)
 first_difference(fit, "x", from = -1, to = 1, quantity = "mean")
 }
 }
