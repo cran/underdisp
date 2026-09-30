@@ -23,6 +23,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include "support_cap.h"
 using namespace Rcpp;
 
 static double gec_logpmf_fe(int y, double mu, double delta, int max_support) {
@@ -101,7 +102,7 @@ struct Unit {
     prev = -1e300; next = 1e300; prev_t = -1; next_t = -1;
     for (int t = lo; t < hi; t++) {
       double N = std::exp(a + o[t]) / (1.0 - delta);
-      int K = (int)std::floor(N + 1e-9);
+      int K = cap_support_int(std::floor(N + 1e-9), max_support);
       if (K >= 1) { double b = std::log((double)K * (1.0 - delta)) - o[t]; if (b > prev) { prev = b; prev_t = t; } }
       double b2 = std::log((double)(K + 1) * (1.0 - delta)) - o[t]; if (b2 < next) { next = b2; next_t = t; }
     }

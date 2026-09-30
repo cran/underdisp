@@ -1,7 +1,7 @@
 Package: underdisp
 Type: Package
 Title: Diagnostics and Models for Underdispersed Count Data
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: person("Benjamin E.", "Bagozzi", email = "bagozzib@udel.edu",
     role = c("aut", "cre"), comment = c(ORCID = "0000-0002-6233-6453"))
 Description: Tools for detecting and modeling underdispersion in count data
@@ -38,9 +38,9 @@ URL: https://CRAN.R-project.org/package=underdisp,
 BugReports: https://github.com/bagozzib/underdisp/issues
 Config/testthat/edition: 3
 NeedsCompilation: yes
-Packaged: 2026-09-28 10:52:15 UTC; bagoz
+Packaged: 2026-09-29 11:43:07 UTC; bagoz
 Author: Benjamin E. Bagozzi [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-6233-6453>)
 Maintainer: Benjamin E. Bagozzi <bagozzib@udel.edu>
 Repository: CRAN
-Date/Publication: 2026-09-28 15:30:02 UTC
+Date/Publication: 2026-09-30 21:20:08 UTC

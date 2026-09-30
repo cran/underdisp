@@ -19,6 +19,7 @@
 #define UNDERDISP_CPB_PMF_H
 #include <Rcpp.h>
 #include <cmath>
+#include "support_cap.h"
 
 // Normalizer and (optionally) the pmf moments E[k] and E[psi(n-k+1)]:
 // returns false where the point is infeasible (y above its ceiling, or the
@@ -27,7 +28,7 @@
 static inline bool cpb_norm(int y, double lam, double alpha, double la, double l1a, int max_support, bool moments,
                             double& n, int& K, double& lgn1, double& logZ, double& ek, double& epsi) {
   n = lam / (1.0 - alpha);
-  K = (int)std::floor(n + 1e-9);                     // integer ceilings are feasible (tolerance shared with R)
+  K = cap_support_int(std::floor(n + 1e-9), max_support);   // integer ceilings are feasible (tolerance shared with R)
   if (y > K || K > max_support) return false;
   int m = (int)std::floor((n + 1.0) * (1.0 - alpha)); if (m > K) m = K; if (m < 0) m = 0;
   lgn1 = R::lgammafn(n + 1.0);

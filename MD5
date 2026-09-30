@@ -1,6 +1,6 @@
-9ca0e629000cfa5f2225825706284b5f *DESCRIPTION
+3e229020c734c73470897d75c083de57 *DESCRIPTION
 04b2db21c140ecc746c5b0d1798ef691 *NAMESPACE
-5b90733a217ac1b5d619c6b1085fbbfe *NEWS.md
+931f9e87073892dee84946ceb0e1875f *NEWS.md
 eb7825d731dd9d052d92c70b0118cf84 *R/RcppExports.R
 087ea995ccdde34fca71da72c3d5cb59 *R/broom.R
 a741279eb2aca42c842d0d50354feb02 *R/calibrate_alpha.R
@@ -101,12 +101,13 @@ d35a0928097e417b260b8a9ef5641349 *man/tidy.cpb.Rd
 dfe760d59bb4318f086838c97bcdb9b0 *man/zi_test.Rd
 b81dd516f08b121f592f8d04a6acd88c *src/RcppExports.cpp
 63842dd28b26a41182a58dc5d3406008 *src/cmp_mean.cpp
-8d58106f044adbc5183cac4fbdca6610 *src/cpb_fe.cpp
+f66a1165d64d1fa1b1bb50fb9a19b862 *src/cpb_fe.cpp
 43fb2f0e3086094431723f746ff67a41 *src/cpb_ll.cpp
-c420a3bcc7906406439206348936085a *src/cpb_pmf.h
+e7829026055b1d10f5a32b4c65e7e260 *src/cpb_pmf.h
 354cf8452b6d0090ff8ef2762a109d99 *src/family_norm.cpp
-57fa2687fd53626e2402ed1a99837bf0 *src/gec_fe.cpp
+52127cb6d8ea4f3376a48f2fc79ab4ae *src/gec_fe.cpp
 214532ef879d2df77e8de5e104cadb7c *src/gec_ll.cpp
+f275ddd6e381230dff5d25ecf02e53b2 *src/support_cap.h
 96f9e31dc0bc1e7b0893e66485d9dc77 *tests/testthat.R
 71e250e44b4e49867ff8514ab12a22af *tests/testthat/test-alpha-interval.R
 9aace78f44c25db40f46181d7975703b *tests/testthat/test-arguments.R
@@ -144,6 +145,7 @@ db4a53e85042404d42d64d9533f045f4 *tests/testthat/test-screen-nb.R
 9b4c5147ee6da98f43c898339ae38725 *tests/testthat/test-screen.R
 dfafb357d1683da61f6eac5cf67fa1c5 *tests/testthat/test-se-cluster.R
 bf040376a19f2b8dfaa81ef1844679c2 *tests/testthat/test-simulate-dharma.R
+dcb9d1ed7cc27e85bc6e157560edbc70 *tests/testthat/test-support-cap.R
 6ae5c9e0c48e15180f2d19e5ec85b807 *tests/testthat/test-tables.R
 1b406e671c0c51799393f275fb3befd3 *tests/testthat/test-validation.R
 1b30152d7cbbbd105cb9feb078190ae3 *tests/testthat/test-weights.R

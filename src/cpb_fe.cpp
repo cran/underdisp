@@ -64,7 +64,7 @@ struct Unit {
     prev = -1e300; next = 1e300; prev_t = -1; next_t = -1;
     for (int t = lo; t < hi; t++) {
       double N = std::exp(a + o[t]) / (1.0 - alpha);
-      int K = (int)std::floor(N + 1e-9);
+      int K = cap_support_int(std::floor(N + 1e-9), max_support);
       if (K >= 1) { double b = std::log((double)K * (1.0 - alpha)) - o[t]; if (b > prev) { prev = b; prev_t = t; } }
       double b2 = std::log((double)(K + 1) * (1.0 - alpha)) - o[t]; if (b2 < next) { next = b2; next_t = t; }
     }
@@ -100,10 +100,12 @@ static void scan_breakpoints(const Unit& U, double WL, double WH, double L0,
   // a breakpoint at ceiling k drops the objective by about (1-alpha)^k: only
   // ceilings whose jump exceeds 1e-7 are worth visiting
   double kcap = std::log(1e-7) / std::log1p(-U.alpha);
-  int kmax_teeth = (kcap > (double)U.max_support) ? U.max_support : (int)std::floor(kcap);
+  int kmax_teeth = (!(kcap < (double)U.max_support)) ? U.max_support   // +Inf and NaN land here
+                 : (kcap > 0.0 ? (int)std::floor(kcap) : 0);           // and -Inf here
   for (int t = U.lo; t < U.hi; t++) {
     double nlo = std::exp(WL + U.o[t]) / (1.0 - U.alpha), nhi = std::exp(WH + U.o[t]) / (1.0 - U.alpha);
-    int klo = std::max((int)std::ceil(nlo), U.Y[t] + 1), khi = (int)std::floor(nhi);
+    int klo = std::max(cap_support_int(std::ceil(nlo), U.max_support), U.Y[t] + 1);
+    int khi = cap_support_int(std::floor(nhi), U.max_support);
     if (khi > kmax_teeth) khi = kmax_teeth;
     for (int k = klo; k <= khi; k++) {
       double b = std::log((double)k * (1.0 - U.alpha)) - U.o[t] - BP_EPS;
@@ -161,7 +163,7 @@ static double maximize_unit(const Unit& U, double a0, double& a_star, int& edge_
     // teeth are wide and tall, are searched across whole teeth.
     double wmax = 0.0;
     for (int t = U.lo; t < U.hi; t++) {
-      int K = (int)std::floor(std::exp(centre + U.o[t]) / (1.0 - U.alpha) + 1e-9);
+      int K = cap_support_int(std::floor(std::exp(centre + U.o[t]) / (1.0 - U.alpha) + 1e-9), U.max_support);
       if (K < 1) K = 1;
       double wt = std::log1p(1.0 / (double)K); if (wt > wmax) wmax = wt;
     }

@@ -1,3 +1,24 @@
+# underdisp 0.1.2
+
+## Bug fixes
+
+* Converting a fitted ceiling to an integer is now guarded against values outside
+  the range of `int`. The CPB's ceiling is `lambda / (1 - alpha)` and the GEC's is
+  `mu / (1 - delta)`; both diverge as the dispersion parameter approaches its
+  equidispersed limit, which an optimizer reaches routinely, and the conversion
+  was undefined behaviour there. CRAN's macOS sanitizer build reported it in
+  `cpb_pmf.h` and `cpb_fe.cpp`. All six conversions of this kind, including two the
+  sanitizer did not reach, now cap the ceiling at `max.support + 1` first, through
+  a single rule in `src/support_cap.h`.
+
+  A ceiling past `max.support` was already treated as infeasible, on both of the
+  platforms whose out-of-range conversions differ, so fitted values are unchanged:
+  every cross-sectional and fixed-effects CPB fit, every GEC fit without fixed
+  effects, and the calibrated interval reproduce bit for bit. The exception is
+  `gec_fe()` on data whose dispersion is driven to the Katz limit, where the
+  breakpoint scan now runs from a defined bound and the optimizer can settle a few
+  parts in 10^8 away.
+
 # underdisp 0.1.1
 
 ## New families
