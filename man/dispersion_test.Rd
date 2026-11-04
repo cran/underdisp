@@ -37,7 +37,7 @@ statistic, the p-value, the estimated dispersion parameter and its Poisson
 value, the two log-likelihoods, and the alternative; for \code{method = "lr"}
 also \code{calibration} (\code{"asymptotic"} or \code{"parametric bootstrap"}), \code{B} and
 \code{B_ok} (replicates requested and completed), \code{boot} (the simulated
-statistics), \code{first_order_size} (the asymptotic 5\\% test's first-order
+statistics), \code{first_order_size} (the asymptotic 5\% test's first-order
 size), \code{asymptotic_ok} (whether the calibration rule admits the asymptotic
 distribution), and \code{note} where a statistic or p-value needs one.
 }
@@ -56,7 +56,8 @@ alternative family.
 The Poisson is nested in every family at one value of the dispersion
 parameter: \code{alpha = 1} (CPB), \code{delta = 1} (GEC), \code{nu = 1} (both COM-Poisson
 parameterizations), \code{lambda = 0} (generalized Poisson), \code{alpha = 1}
-(gamma-count), \code{theta = 1} (double Poisson), and \code{1/theta = 0} (negative
+(gamma-count), \code{theta = 1} (double Poisson), \code{gamma = 1} (hyper-Poisson),
+\code{beta1 = beta2 = 0} or \code{beta = 0} (the EWP), and \code{1/theta = 0} (negative
 binomial). When that value is interior to the parameter space the
 likelihood-ratio statistic is asymptotically \eqn{\chi^2_1} under the null; a
 directional alternative (\code{"under"} or \code{"over"}) uses the signed root
@@ -74,24 +75,34 @@ and its score there is the classical dispersion score
 \eqn{-[(y - \lambda)^2 - y] / (2\lambda)}; the zero-truncated model reaches
 the same mixture through its efficient score. Because the Poisson is the CPB's
 limit as \code{alpha} approaches 1, the statistic cannot be negative in principle;
-when the \code{max.support} guard stops \code{alpha} short of that limit and the fitted
-log-likelihood lands just below the Poisson's, the statistic takes its
-boundary value 0. Any other negative statistic means the optimizer fell
-short, and no p-value is reported.
+when the fit reaches that limit (King's CPB, whose likelihood approaches the
+Poisson's continuously) or the floor support's \code{max.support} guard stops
+\code{alpha} short of it, and the fitted log-likelihood lands just below the
+Poisson's, the statistic takes its boundary value 0. Any other negative
+statistic means the optimizer fell short, and no p-value is reported.
 
 \strong{Calibration.} Where the Poisson value is on the boundary of the family's
 parameter space (the CPB, the negative binomial), or the fit has unit fixed
 effects, the p-value is by default a parametric bootstrap with 199
-replicates. The one-sided boundary statistic is skewed toward rejection in
-finite samples, and unit intercepts bias the dispersion estimate toward
-underdispersion by an amount of order 1/T; in both cases the asymptotic
-distribution over-rejects. Where the Poisson value is interior, the
+replicates, which does not depend on the direction in which the asymptotic
+reference errs. For the CPB it errs toward rejection: in the package's
+simulations from the Poisson the asymptotic boundary mixture rejected 7 to
+10 percent of 5\% tests with 60 to 200 observations, and 54 to 92 percent
+with unit fixed effects, whose intercepts bias the dispersion estimate toward
+underdispersion by an amount of order 1/T. The same rule bootstraps the
+negative binomial's boundary test.
+Where the Poisson value is interior, the
 asymptotic distribution is used unless the estimated mean parameters shift
 it too far: to first order they move the signed root toward
 underdispersion by \eqn{p/\sqrt{2n}} standard deviations for \eqn{p} mean
 parameters on \eqn{n} observations (the weight total), the bias Dean and
 Lawless (1989) remove from the score test, and the bootstrap takes over when
-that shift pushes the first-order size of a 5\\% test above 6\\%. The bootstrap
+that shift pushes the first-order size of a 5\% test above 6\%. The shift is
+derived for one tested parameter, so the EWP3's joint test of its two tails
+takes the bootstrap by default: in the package's simulations from the
+Poisson its asymptotic \eqn{\chi^2_2} rejected 6.4 to 7.5 percent of 5\%
+tests with one or two mean parameters on 200 to 500 observations, and 8.0
+percent with ten on 400. The bootstrap
 simulates responses from the Poisson (zero-truncated Poisson) fitted to the
 same design, offset, weights, and unit effects, refits both models to each,
 and reports the share of simulated statistics at least as extreme as the

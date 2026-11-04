@@ -3,6 +3,17 @@
 // maximization, so the outer optimizer sees only (beta, alpha). No unit dummies.
 // Data must be SORTED BY UNIT; ustart[u]..ustart[u+1]-1 are unit u's rows.
 //
+// Two supports (cpb_pmf.h). Under King's, 0..ceiling(N_t), the default, the
+// unit objective is continuous in the intercept a: the support point that
+// enters as N_t crosses an integer carries mass that grows from zero, so the
+// crossing is a kink, a downward jump of the slope, and the objective tends to
+// -infinity at the feasibility floor, where some N_t falls to y_t - 1. As in
+// gec_fe.cpp (the same distribution at delta = alpha), the smooth part is
+// unimodal and the kinks only lower the slope, so golden section on a
+// bracket around the unit's Poisson intercept, expanded while the maximum sits
+// at an edge, finds the maximum, which may lie at a kink (maximize_unit_ceil).
+// The rest of this header describes the floor support (the 0.1.x definition).
+//
 // The inner problem. Observation t has rate lambda_t = exp(a + o_t) and ceiling
 // N_t = lambda_t / (1 - alpha), and its pmf is renormalized over 0..floor(N_t).
 // As a increases through a breakpoint a = log(k (1-alpha)) - o_t (N_t = k) the
@@ -48,11 +59,11 @@ using namespace Rcpp;
 namespace {
 struct Unit {
   const IntegerVector& Y; const std::vector<double>& o; const NumericVector& w;
-  int lo, hi; double alpha, la, l1a; int max_support; bool truncated;
+  int lo, hi; double alpha, la, l1a; int max_support; bool truncated; bool fl;   // fl: floor support
   double ll(double a) const {
     double v = 0.0;
     for (int t = lo; t < hi; t++) {
-      double lp = cpb_logpmf(Y[t], std::exp(a + o[t]), alpha, la, l1a, max_support, truncated);
+      double lp = cpb_logpmf_s(fl, Y[t], std::exp(a + o[t]), alpha, la, l1a, max_support, truncated);
       if (lp <= -1e299 || !R_finite(lp)) return -1e300;
       v += w[t] * lp;
     }
@@ -116,9 +127,85 @@ static void scan_breakpoints(const Unit& U, double WL, double WH, double L0,
   }
 }
 
+// King's support (see the header): the unimodal search of gec_fe.cpp. A count
+// of one has no feasibility floor (every positive N admits it), so a unit
+// whose counts are all ones under zero truncation attains its supremum (0) on
+// the whole half-line of intercepts that keeps every ceiling at or below 1 (its
+// truncated support is then {1}); the search returns a point of that set, which
+// is not identified, and the R side keeps such units out of the reference unit
+// (.fe_identified). A maximum at an integer
+// crossing tracks the crossing as the parameters move, and is flagged for the
+// gradient (crossings at ceilings beyond the guard carry no visible kink).
+static double maximize_unit_ceil(const Unit& U, double a0, double& a_star, int& edge_t, int inner_it) {
+  double alo = -1e300, omax = -1e300; int ymax = 0; double sy = 0.0, se = 0.0;
+  edge_t = -1;
+  for (int t = U.lo; t < U.hi; t++) {
+    sy += U.w[t] * (double)U.Y[t]; se += U.w[t] * std::exp(U.o[t]);
+    if (U.o[t] > omax) omax = U.o[t];
+    if (U.Y[t] > ymax) ymax = U.Y[t];
+    if (U.Y[t] >= 2) {                                         // support 0..ceil(N): need N > y - 1
+      double b = std::log((1.0 - U.alpha) * (double)(U.Y[t] - 1)) - U.o[t];
+      if (b > alo) alo = b;
+    }
+  }
+  // no positive count: the supremum lies at minus infinity; the sentinel puts every rate of the unit at or
+  // below exp(-30) whatever its linear predictors (an absolute -30 left uncentred covariates with large rates)
+  if (ymax == 0) { a_star = -30.0 - omax; return 0.0; }
+  double apois = (sy > 0.0 && se > 0.0) ? std::log(sy / se) : 0.0;
+  double L0 = (alo > -1e299) ? alo + 1e-9 : apois - 30.0;
+  double centre;
+  if (R_finite(a0)) centre = std::max(a0, L0);
+  else {
+    double L = std::max(L0, apois - 2.0), H = std::max(L + 0.5, apois + 2.0);
+    double bv = -1e300; centre = L;
+    for (int ext = 0; ext < 3; ext++) {
+      int G = (int)std::ceil((H - L) / 0.5);
+      for (int g = 0; g <= G; g++) {
+        double a = L + (H - L) * (double)g / (double)G;
+        double v = U.ll(a);
+        if (v > bv) { bv = v; centre = a; }
+      }
+      if (centre >= H - 1e-9) { L = H; H = H + 2.0; continue; }
+      if (centre <= L + 1e-9 && L > L0 + 1e-9) { H = L; L = std::max(L0, L - 2.0); continue; }
+      break;
+    }
+  }
+  double best_a = centre, best_v = U.ll(centre);
+  double L = std::max(L0, centre - 0.5), H = centre + 0.5, ag, vg;
+  for (int ext = 0; ext < 6; ext++) {
+    vg = golden_max(U, L, H, inner_it, ag);
+    if (vg > best_v) { best_v = vg; best_a = ag; }
+    if (ag >= H - 1e-4) { L = H - 0.1; H = H + 1.0; continue; }
+    if (ag <= L + 1e-4 && L > L0 + 1e-9) { H = L + 0.1; L = std::max(L0, L - 1.0); continue; }
+    break;
+  }
+  if (best_v <= -1e299) { a_star = L0; return U.ll(L0); }
+  // the integer crossings bounding best_a (prev <= best_a < next)
+  double prev = -1e300, next = 1e300; int pt = -1, nt = -1;
+  for (int t = U.lo; t < U.hi; t++) {
+    double N = std::exp(best_a + U.o[t]) / (1.0 - U.alpha);
+    if (!(N < (double)U.max_support)) continue;
+    int K = (int)std::floor(N + 1e-9);
+    if (K >= 1) { double b = std::log((double)K * (1.0 - U.alpha)) - U.o[t]; if (b > prev) { prev = b; pt = t; } }
+    double b2 = std::log((double)(K + 1) * (1.0 - U.alpha)) - U.o[t]; if (b2 < next) { next = b2; nt = t; }
+  }
+  if (best_a >= next - 1e-5 && nt >= 0) {
+    double aH = next - BP_EPS, vH = U.ll(aH);
+    if (vH >= best_v - 1e-12) { best_v = vH; best_a = aH; }
+    edge_t = nt;
+  } else if (best_a <= prev + 1e-5 && pt >= 0) {
+    double aL = std::max(L0, prev + BP_EPS), vL = U.ll(aL);
+    if (vL >= best_v - 1e-12) { best_v = vL; best_a = aL; }
+    edge_t = pt;
+  }
+  a_star = best_a;
+  return best_v;
+}
+
 // returns the unit's maximized log-likelihood; a_star = the intercept; edge_t =
 // the row whose breakpoint the intercept sits at (-1 for an interior optimum)
 static double maximize_unit(const Unit& U, double a0, double& a_star, int& edge_t, int inner_it) {
+  if (!U.fl) return maximize_unit_ceil(U, a0, a_star, edge_t, inner_it);
   double alo = -1e300; int ymax = 0; double sy = 0.0, se = 0.0;
   edge_t = -1;
   for (int t = U.lo; t < U.hi; t++) {
@@ -242,7 +329,7 @@ static void compute_offsets(NumericVector params, NumericMatrix X, NumericVector
 // [[Rcpp::export]]
 List cpb_fe_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset,
                     NumericVector w, IntegerVector ustart, int n_units, int max_support,
-                    bool truncated, int inner_it, NumericVector awarm) {
+                    bool truncated, int inner_it, NumericVector awarm, bool floor_support) {
   int n = X.nrow(), p = X.ncol();
   if (ustart.size() != n_units + 1 || ustart[n_units] != n || Y.size() != n || w.size() != n || offset.size() != n)
     Rcpp::stop("internal error: unit index does not match the design (rows dropped after indexing)");
@@ -256,7 +343,7 @@ List cpb_fe_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, Nume
   double total = 0.0, astar; int et;
   for (int u = 0; u < n_units; u++) {
     if ((u & 15) == 0) Rcpp::checkUserInterrupt();
-    Unit U = { Y, o, w, ustart[u], ustart[u+1], alpha, la, l1a, max_support, truncated };
+    Unit U = { Y, o, w, ustart[u], ustart[u+1], alpha, la, l1a, max_support, truncated, floor_support };
     double a0 = warm ? awarm[u] : NA_REAL;
     double ll = maximize_unit(U, a0, astar, et, inner_it);
     if (ll <= -1e299) return List::create(1e10, awarm, edge);
@@ -266,11 +353,14 @@ List cpb_fe_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, Nume
 }
 
 // Gradient of the concentrated negative log-likelihood with respect to
-// (beta, logit alpha) at the solved intercepts `a` (see the header comment).
+// (beta, logit alpha) at the solved intercepts `a` (see the header comment). An
+// intercept at an integer crossing (King's support: a kink; floor support: the
+// left limit at a breakpoint) tracks it, a* = log(k (1-alpha)) - o_{t*}, under
+// either support.
 // [[Rcpp::export]]
 NumericVector cpb_fe_grad_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset,
                               NumericVector w, IntegerVector ustart, int n_units, int max_support,
-                              bool truncated, NumericVector a, IntegerVector edge) {
+                              bool truncated, NumericVector a, IntegerVector edge, bool floor_support) {
   int n = X.nrow(), p = X.ncol();
   if (ustart.size() != n_units + 1 || ustart[n_units] != n || a.size() != n_units || edge.size() != n_units)
     Rcpp::stop("internal error: gradient inputs do not match the design");
@@ -282,7 +372,7 @@ NumericVector cpb_fe_grad_cpp(NumericVector params, NumericMatrix X, IntegerVect
     double Ga = 0.0, Galpha = 0.0; std::vector<double> Gb(p, 0.0);
     for (int t = ustart[u]; t < ustart[u+1]; t++) {
       double de, da;
-      if (!cpb_dlogpmf(Y[t], std::exp(a[u] + o[t]), alpha, la, l1a, max_support, truncated, de, da))
+      if (!cpb_dlogpmf_s(floor_support, Y[t], std::exp(a[u] + o[t]), alpha, la, l1a, max_support, truncated, de, da))
         return NumericVector(p + 1, NA_REAL);
       Ga += w[t] * de; Galpha += w[t] * da;
       for (int j = 0; j < p; j++) Gb[j] += w[t] * de * X(t, j);
@@ -301,13 +391,14 @@ NumericVector cpb_fe_grad_cpp(NumericVector params, NumericMatrix X, IntegerVect
 // Per-observation derivatives of the CPB log pmf (columns: d/d eta, d/d alpha),
 // exported for verification against numerical differences of dcpb().
 // [[Rcpp::export]]
-NumericMatrix cpb_dlogpmf_cpp(IntegerVector y, NumericVector lam, double alpha, int max_support, bool truncated) {
+NumericMatrix cpb_dlogpmf_cpp(IntegerVector y, NumericVector lam, double alpha, int max_support, bool truncated,
+                              bool floor_support) {
   int n = y.size();
   double la = std::log(alpha), l1a = std::log1p(-alpha);
   NumericMatrix out(n, 2);
   for (int i = 0; i < n; i++) {
     double de, da;
-    if (cpb_dlogpmf(y[i], lam[i], alpha, la, l1a, max_support, truncated, de, da)) { out(i, 0) = de; out(i, 1) = da; }
+    if (cpb_dlogpmf_s(floor_support, y[i], lam[i], alpha, la, l1a, max_support, truncated, de, da)) { out(i, 0) = de; out(i, 1) = da; }
     else { out(i, 0) = NA_REAL; out(i, 1) = NA_REAL; }
   }
   return out;
@@ -317,7 +408,7 @@ NumericMatrix cpb_dlogpmf_cpp(IntegerVector y, NumericVector lam, double alpha, 
 // [[Rcpp::export]]
 NumericVector cpb_fe_intercepts_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset,
                                     NumericVector w, IntegerVector ustart, int n_units, int max_support,
-                                    bool truncated, int inner_it) {
+                                    bool truncated, int inner_it, bool floor_support) {
   int n = X.nrow(), p = X.ncol();
   if (ustart.size() != n_units + 1 || ustart[n_units] != n || Y.size() != n || w.size() != n || offset.size() != n)
     Rcpp::stop("internal error: unit index does not match the design (rows dropped after indexing)");
@@ -326,7 +417,7 @@ NumericVector cpb_fe_intercepts_cpp(NumericVector params, NumericMatrix X, Integ
   std::vector<double> o(n); compute_offsets(params, X, offset, o);
   NumericVector fe(n_units); double astar; int et;
   for (int u = 0; u < n_units; u++) {
-    Unit U = { Y, o, w, ustart[u], ustart[u+1], alpha, la, l1a, max_support, truncated };
+    Unit U = { Y, o, w, ustart[u], ustart[u+1], alpha, la, l1a, max_support, truncated, floor_support };
     maximize_unit(U, NA_REAL, astar, et, inner_it);
     fe[u] = astar;
   }

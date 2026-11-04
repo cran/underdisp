@@ -37,17 +37,27 @@ An opt-in step that stores, in the fit, the parametric-bootstrap
 distribution of the signed root of the profile likelihood ratio for \code{alpha}.
 Once it is stored, \code{\link[=alpha_confint]{alpha_confint()}}, \code{\link[=confint.cpb]{confint.cpb()}}, \code{\link[=implied_ceiling]{implied_ceiling()}}
 and \code{summary()} report the calibrated interval instead of the first-order
-one.
+one. It is the remedy for floor-support fits (\code{support = "floor"}). On King's
+support, the default, the first-order interval covers close to its level, and
+the calibration is an optional refinement.
 }
 \details{
 The first-order interval cuts the profile log-likelihood \code{qchisq(level, 1) / 2}
-below its maximum on both sides. For the CPB that cut is not calibrated: the
-support \verb{0, ..., floor(lambda / (1 - alpha))} moves with the parameters, the
+below its maximum on both sides. On King's support that cut is close to
+calibrated, because the probabilities change continuously with the parameters.
+The simulations from the CPB cover nine designs (n from 200 to 1,000, true
+\code{alpha} 0.3, 0.5 and 0.7). There the first-order 95\% interval covers between
+0.940 and 0.956, 0.947 on average, and more of its misses fall above the upper
+limit than below the lower one. With \code{B = 39} replicates, the calibrated
+interval covers 0.948 on average in the same simulations. It is about 12\%
+longer, and its misses are more nearly balanced.
+
+On the floor support the cut is not calibrated. The support
+\verb{0, ..., floor(lambda / (1 - alpha))} moves with the parameters, the
 log-ceiling coefficients behave like endpoint parameters, and \code{alpha}-hat
-inherits a bias toward zero from them. In simulations from the CPB the
-first-order 95\% interval covers between 0.90 and 0.94 across a grid of nine
-designs, and nearly all of its misses have the true \code{alpha} above the upper
-limit.
+inherits a bias toward zero from them. Across the same nine designs the
+first-order 95\% interval covers between 0.90 and 0.94, and most of its misses
+have the true \code{alpha} above the upper limit.
 
 The calibration simulates \code{B} responses from the fitted model (the fitted
 rates, \code{alpha}-hat, the same truncation and offset), refits each one, and
@@ -56,9 +66,10 @@ The interval is then \verb{\{alpha : q_lo <= r(alpha) <= q_hi\}}, with \code{q_l
 \code{q_hi} the order statistics of the \verb{r*} at ranks \code{(B + 1)(1 - level)/2} from
 each end (the 5th smallest and 5th largest of 199 at the 95\% level), so the
 upper limit sits \code{q_lo^2 / 2} and the lower limit \code{q_hi^2 / 2} below the
-maximum of the profile. In the same simulations the calibrated 95\% interval
-covers 0.92 to 0.96, with its misses balanced between the two sides. The
-first-order interval falls short only when the design has many distinct
+maximum of the profile. On the floor support, in the same simulations, the
+calibrated 95\% interval covers 0.92 to 0.96, with its misses balanced between
+the two sides. On the floor support, the first-order interval falls short only
+when the design has many distinct
 covariate patterns (the endpoint effect needs many distinct ceilings): with an
 intercept only, or a covariate taking ten or fewer values, it covers at or
 above its level, and the calibration, which stays close to the nominal level

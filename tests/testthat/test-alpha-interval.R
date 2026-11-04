@@ -28,3 +28,11 @@ test_that("side-specific cuts move each limit on its own", {
   expect_equal(none[["lower"]], unname(fit$alpha), tolerance = 1e-3)
   expect_equal(none[["upper"]], unname(fit$alpha), tolerance = 1e-3)
 })
+
+test_that("on King's support the alpha interval follows the profile below 0.005", {
+  skip_on_cran()
+  set.seed(9); x <- rnorm(45); y <- rcpb(45, exp(1.5 + 0.3 * x), 0.01)
+  f <- suppressWarnings(cpb(y ~ x, data.frame(y = y, x = x), truncated = FALSE))
+  ci <- alpha_confint(f)
+  expect_lt(ci[["lower"]], 0.005); expect_lt(ci[["lower"]], f$alpha); expect_false(isTRUE(attr(ci, "boundary")))
+})

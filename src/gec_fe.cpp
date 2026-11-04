@@ -35,16 +35,19 @@ static double gec_logpmf_fe(int y, double mu, double delta, int max_support) {
     for (int j = 0; j < (int)lk.size(); j++) lk[j] = std::log((double)(j + 1));
   }
   lw[0] = 0.0;
-  double mx = 0.0; int k = 0;
+  double mx = 0.0; int k = 0; bool ends = false;
   while (k <= max_support) {
     double num = omega + gamma * (double)k;
-    if (num <= 0.0) break;
+    if (num <= 0.0) { ends = true; break; }
     double next = lw[k] + std::log(num) - lk[k];
     lw[k + 1] = next; if (next > mx) mx = next; k++;
     // the terms are unimodal in k (their ratio (omega + gamma k)/(k+1) is
     // decreasing), so the sum stops 36 log units below the peak once past y
-    if (k >= y && next - mx < -36.0) break;
+    if (k >= y && next - mx < -36.0) { ends = true; break; }
   }
+  // a sum that the guard cuts while its terms are still large is not renormalized over the cut support, which
+  // would inflate the likelihood toward large delta: it is infeasible, as in the pooled kernel (gec_ll.cpp)
+  if (!ends) return -1e300;
   int K = k;
   if (y > K) return -1e300;
   double s = 0.0; for (int j = 0; j <= K; j++) s += std::exp(lw[j] - mx);
@@ -65,16 +68,18 @@ static bool gec_dlogpmf_fe(int y, double mu, double delta, int max_support, doub
     for (int j = 0; j < (int)lk.size(); j++) lk[j] = std::log((double)(j + 1));
   }
   lw[0] = 0.0; ce[0] = 0.0; cd[0] = 0.0;
-  double mx = 0.0; int k = 0;
+  double mx = 0.0; int k = 0; bool ends = false;
   while (k <= max_support) {
     double num = omega + gamma * (double)k;
-    if (num <= 0.0) break;
+    if (num <= 0.0) { ends = true; break; }
     lw[k + 1] = lw[k] + std::log(num) - lk[k];
     ce[k + 1] = ce[k] + omega / num;
     cd[k + 1] = cd[k] + (-omega + (double)k / delta) / num;
-    if (lw[k + 1] > mx) mx = lw[k + 1]; k++;
-    if (k >= y && lw[k] - mx < -36.0) break;
+    if (lw[k + 1] > mx) mx = lw[k + 1];
+    k++;
+    if (k >= y && lw[k] - mx < -36.0) { ends = true; break; }
   }
+  if (!ends) return false;                             // cut by the guard (see gec_logpmf_fe)
   int K = k;
   if (y > K) return false;
   double s = 0.0, ee = 0.0, ed = 0.0;
@@ -102,6 +107,7 @@ struct Unit {
     prev = -1e300; next = 1e300; prev_t = -1; next_t = -1;
     for (int t = lo; t < hi; t++) {
       double N = std::exp(a + o[t]) / (1.0 - delta);
+      if (!(N < (double)max_support)) continue;          // no crossing inside the guard (as cpb_fe.cpp)
       int K = cap_support_int(std::floor(N + 1e-9), max_support);
       if (K >= 1) { double b = std::log((double)K * (1.0 - delta)) - o[t]; if (b > prev) { prev = b; prev_t = t; } }
       double b2 = std::log((double)(K + 1) * (1.0 - delta)) - o[t]; if (b2 < next) { next = b2; next_t = t; }
@@ -128,11 +134,12 @@ static double golden_max(const Unit& U, double L, double H, int iters, double& a
 // returns the unit's maximized log-likelihood; a_star = the intercept; edge_t =
 // the row whose ceiling crossing the intercept sits at (-1 for an interior optimum)
 static double maximize_unit(const Unit& U, double a0, double& a_star, int& edge_t, int inner_it) {
-  double alo = -1e300; int ymax = 0; double sy = 0.0, se = 0.0;
+  double alo = -1e300, omax = -1e300; int ymax = 0; double sy = 0.0, se = 0.0;
   bool finite_support = U.delta < 1.0;
   edge_t = -1;
   for (int t = U.lo; t < U.hi; t++) {
     sy += U.w[t] * (double)U.Y[t]; se += U.w[t] * std::exp(U.o[t]);
+    if (U.o[t] > omax) omax = U.o[t];
     if (U.Y[t] > 0) {
       if (U.Y[t] > ymax) ymax = U.Y[t];
       if (finite_support && U.Y[t] >= 2) {         // support 0..ceil(N): need N > y - 1
@@ -141,9 +148,12 @@ static double maximize_unit(const Unit& U, double a0, double& a_star, int& edge_
       }
     }
   }
-  if (ymax == 0) { a_star = -30.0; return 0.0; }
+  // no positive count: every rate of the unit at or below exp(-30), whatever its linear predictors; the lower
+  // end of the search relative to the unit's Poisson intercept, as in cpb_fe.cpp (an absolute -30 cut off the
+  // optimum of a unit whose linear predictors are large)
+  if (ymax == 0) { a_star = -30.0 - omax; return 0.0; }
   double apois = (sy > 0.0 && se > 0.0) ? std::log(sy / se) : 0.0;
-  double L0 = finite_support ? alo + 1e-9 : -30.0;
+  double L0 = finite_support ? alo + 1e-9 : apois - 30.0;
   double centre;
   if (R_finite(a0)) centre = std::max(a0, L0);
   else {

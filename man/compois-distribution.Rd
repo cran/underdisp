@@ -39,7 +39,9 @@ and \code{lambda} is ignored.}
 }
 \value{
 \code{dcompois} a density, \code{pcompois} a CDF, \code{qcompois} a quantile,
-\code{rcompois} a numeric vector of count draws.
+\code{rcompois} a numeric vector of count draws. A rate whose normalizing sum
+the 100,000-term cap would truncate (a mean of order \eqn{10^5} or more)
+gives \code{NA}.
 }
 \description{
 Density, distribution, quantile, and random generation for the COM-Poisson

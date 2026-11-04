@@ -48,7 +48,10 @@ test_that("fits without inference refuse informatively or return point estimates
   expect_null(vcov(g)); expect_error(confint(g), "No inference")
   fe <- cpb_fe(y ~ x, d0, fe = "u")
   expect_error(confint(fe), "No inference")
-  expect_null(vcov(hurdle_cpb(y ~ x, d0, participation = ~ z, se = "none")))
+  ## a hurdle without intensity inference keeps its participation equation's covariance, the intensity's NA
+  vh <- vcov(hurdle_cpb(y ~ x, d0, participation = ~ z, se = "none"))
+  expect_true(all(is.finite(vh[startsWith(rownames(vh), "participation:"), startsWith(colnames(vh), "participation:")])))
+  expect_true(all(is.na(vh[startsWith(rownames(vh), "intensity:"), startsWith(colnames(vh), "intensity:")])))
 })
 
 test_that("argument checks are uniform across the family", {

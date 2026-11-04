@@ -14,17 +14,24 @@
 #'
 #' Density, distribution function, and quantile function for the continuous
 #' parameter binomial (CPB), and its zero-truncated form. The CPB has a hard
-#' ceiling at \eqn{\lfloor \lambda/(1-\alpha) \rfloor}; probability above it is
-#' zero. Complements the simulator [rcpb()].
+#' ceiling: King's CPB (the default) puts no probability above
+#' \eqn{\lceil \lambda/(1-\alpha) \rceil}, the floor support (`support =
+#' "floor"`, the definition before version 0.2.0) none above
+#' \eqn{\lfloor \lambda/(1-\alpha) \rfloor}. Complements the simulator [rcpb()].
 #'
 #' @param x,q Vector of quantiles (non-negative integers).
 #' @param p Vector of probabilities.
-#' @param lambda Mean parameter (scalar or vector, recycled).
+#' @param lambda Rate parameter (scalar or vector, recycled). It is the mean
+#'   where `lambda / (1 - alpha)` is an integer; otherwise the mean lies above it
+#'   on King's support and below it on the floor support.
 #' @param alpha Shape parameter in (0, 1).
-#' @param truncated If `TRUE`, use the zero-truncated CPB. Where the implied
-#'   ceiling `lambda / (1 - alpha)` is below 1 the CPB puts all its mass on 0,
-#'   and its zero-truncated form is the point mass at 1, the zero-truncated
-#'   distribution for every ceiling in [1, 2).
+#' @param truncated If `TRUE`, use the zero-truncated CPB. On the floor support,
+#'   where the implied ceiling `lambda / (1 - alpha)` is below 1 the CPB puts all
+#'   its mass on 0, and its zero-truncated form is the point mass at 1, the
+#'   zero-truncated distribution for every ceiling in [1, 2); King's support
+#'   always contains 1.
+#' @param support The CPB's support, `"ceiling"` (King's CPB, the default) or
+#'   `"floor"`; see [cpb()].
 #' @param log,log.p If `TRUE`, probabilities are given as log.
 #' @param lower.tail If `TRUE` (default), probabilities are \eqn{P(X \le x)}.
 #' @return `dcpb` a density, `pcpb` a distribution function, `qcpb` a quantile.
@@ -35,115 +42,100 @@
 #' @seealso [rcpb()]
 #' @name cpb-distribution
 #' @export
-dcpb <- function(x, lambda, alpha, truncated = FALSE, log = FALSE) {
+dcpb <- function(x, lambda, alpha, truncated = FALSE, log = FALSE, support = c("ceiling", "floor")) {
+  support <- match.arg(support)
   if (!length(x) || !length(lambda)) return(numeric(0))
   if (length(alpha) != 1L) stop("'alpha' must be a single value.")
   n <- max(length(x), length(lambda)); x <- rep_len(x, n); lambda <- rep_len(lambda, n)
   out <- vapply(seq_len(n), function(i) {
     xi <- x[i]
     if (xi < 0 || xi != floor(xi)) return(0)
-    pm <- .cpb_pmf1(lambda[i], alpha, kmax = xi, truncated = truncated)
+    pm <- .cpb_pmf1(lambda[i], alpha, kmax = xi, truncated = truncated, support = support)
     pm[xi + 1L]
   }, numeric(1))
+  out <- .cpb_warn_cap(out)
   if (log) log(out) else out
+}
+
+## a CPB pmf refused at the 1e5-term cap (a rate of order 1e5 on King's support) is NA, with a warning
+.cpb_warn_cap <- function(out) {
+  if (anyNA(out)) warning("the CPB support reaches the 1e5-term cap for ", sum(is.na(out)), " value(s) (a rate of ",
+                          "order 1e5): NA returned.", call. = FALSE)
+  out
 }
 
 #' @rdname cpb-distribution
 #' @export
-pcpb <- function(q, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE) {
+pcpb <- function(q, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE,
+                 support = c("ceiling", "floor")) {
+  support <- match.arg(support)
   if (!length(q) || !length(lambda)) return(numeric(0))
   if (length(alpha) != 1L) stop("'alpha' must be a single value.")
   n <- max(length(q), length(lambda)); q <- rep_len(q, n); lambda <- rep_len(lambda, n)
   out <- vapply(seq_len(n), function(i) {
     qi <- floor(q[i]); if (qi < 0) return(0)
-    sum(.cpb_pmf1(lambda[i], alpha, kmax = qi, truncated = truncated))
+    sum(.cpb_pmf1(lambda[i], alpha, kmax = qi, truncated = truncated, support = support))
   }, numeric(1))
-  out <- pmin(pmax(out, 0), 1)
+  out <- pmin(pmax(.cpb_warn_cap(out), 0), 1)
   if (!lower.tail) out <- 1 - out
   if (log.p) log(out) else out
 }
 
 #' @rdname cpb-distribution
 #' @export
-qcpb <- function(p, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE) {
+qcpb <- function(p, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE,
+                 support = c("ceiling", "floor")) {
+  support <- match.arg(support)
   if (!length(p) || !length(lambda)) return(numeric(0))
   if (length(alpha) != 1L) stop("'alpha' must be a single value.")
   if (log.p) p <- exp(p); if (!lower.tail) p <- 1 - p
   n <- max(length(p), length(lambda)); p <- rep_len(p, n); lambda <- rep_len(lambda, n)
-  vapply(seq_len(n), function(i) {
-    K <- floor(lambda[i] / (1 - alpha) + 1e-9)          # tolerance matches the pmf core
-    cdf <- cumsum(.cpb_pmf1(lambda[i], alpha, kmax = K, truncated = truncated))
+  .cpb_warn_cap(vapply(seq_len(n), function(i) {
+    K <- if (.cpb_fl(support)) floor(lambda[i] / (1 - alpha) + 1e-9)          # tolerance matches the pmf core
+         else { pr <- .cpb_pmf_core(lambda[i], alpha, support)                 # the support, to negligible mass
+                if (anyNA(pr)) return(NA_real_); length(pr) - 1L }
+    cdf <- cumsum(.cpb_pmf1(lambda[i], alpha, kmax = K, truncated = truncated, support = support))
     as.numeric(which(cdf >= p[i] - 1e-12)[1L] - 1L)
-  }, numeric(1))
+  }, numeric(1)))
 }
 
-## --- zero-truncated Poisson / negative binomial ---------------------------
-## Inverse-CDF sampling: draw U on (F(0), 1) and invert the base quantile, which
-## is exact and vectorized (no rejection loop).
+## --- zero-truncated Poisson / negative binomial densities -------------------
 
 dztpois <- function(x, lambda, log = FALSE) {
   d <- ifelse(x < 1 | x != floor(x), 0, stats::dpois(x, lambda) / -expm1(-lambda))  # -expm1 avoids 1-1 cancellation
   if (log) log(d) else d
-}
-rztpois <- function(n, lambda) {
-  lambda <- rep_len(lambda, n); p0 <- exp(-lambda)
-  stats::qpois(p0 + stats::runif(n) * (1 - p0), lambda)
 }
 dztnbinom <- function(x, mu, size, log = FALSE) {
   logp0 <- size * (log(size) - log(size + mu))                       # log P(0), stable for tiny mu
   d <- ifelse(x < 1 | x != floor(x), 0, stats::dnbinom(x, mu = mu, size = size) / -expm1(logp0))
   if (log) log(d) else d
 }
-rztnbinom <- function(n, mu, size) {
-  mu <- rep_len(mu, n); p0 <- stats::dnbinom(0, mu = mu, size = size)
-  stats::qnbinom(p0 + stats::runif(n) * (1 - p0), mu = mu, size = size)
-}
-
-## --- hurdle Poisson / negative binomial -----------------------------------
-
-## Hurdle count: zero w.p. 1-p, otherwise a zero-truncated Poisson/NB draw.
-dhpois <- function(x, mu, p, log = FALSE) {
-  d <- ifelse(x == 0, 1 - p, ifelse(x >= 1 & x == floor(x), p * dztpois(x, mu), 0))
-  if (log) log(d) else d
-}
-rhpois <- function(n, mu, p) {
-  d <- stats::rbinom(n, 1, p); y <- integer(n); i <- d == 1
-  if (any(i)) y[i] <- rztpois(sum(i), rep_len(mu, n)[i]); y
-}
-dhnbinom <- function(x, mu, p, size, log = FALSE) {
-  d <- ifelse(x == 0, 1 - p, ifelse(x >= 1 & x == floor(x), p * dztnbinom(x, mu, size), 0))
-  if (log) log(d) else d
-}
-rhnbinom <- function(n, mu, p, size) {
-  d <- stats::rbinom(n, 1, p); y <- integer(n); i <- d == 1
-  if (any(i)) y[i] <- rztnbinom(sum(i), rep_len(mu, n)[i], size); y
-}
-
-## --- zero-inflated Poisson / negative binomial ----------------------------
-
-## Zero-inflated count: structural zero w.p. pi, otherwise a Poisson/NB draw.
-dzipois <- function(x, mu, pi, log = FALSE) {
-  d <- ifelse(x == 0, pi + (1 - pi) * stats::dpois(0, mu),
-              ifelse(x >= 1 & x == floor(x), (1 - pi) * stats::dpois(x, mu), 0))
-  if (log) log(d) else d
-}
-rzipois <- function(n, mu, pi) ifelse(stats::rbinom(n, 1, pi) == 1, 0L, stats::rpois(n, mu))
-dzinbinom <- function(x, mu, pi, size, log = FALSE) {
-  d <- ifelse(x == 0, pi + (1 - pi) * stats::dnbinom(0, mu = mu, size = size),
-              ifelse(x >= 1 & x == floor(x), (1 - pi) * stats::dnbinom(x, mu = mu, size = size), 0))
-  if (log) log(d) else d
-}
-rzinbinom <- function(n, mu, pi, size)
-  ifelse(stats::rbinom(n, 1, pi) == 1, 0L, stats::rnbinom(n, mu = mu, size = size))
 
 ## --- generalized event count (Katz) family: density, CDF, quantile, random --
-## The GEC mean is the rate lambda and its variance-to-mean ratio is delta
-## (delta < 1 underdispersed, = 1 Poisson, > 1 overdispersed). Uses the same
+## On an unbounded support (delta >= 1) the GEC mean is the rate lambda and its
+## variance-to-mean ratio is delta; for delta < 1 the support is finite and the
+## exact moments differ (see dgec's help). Uses the same
 ## compiled pmf (gec_pmf_cpp) as the estimator, so d/r are exactly consistent.
 
 .gec_kmax_qr <- function(lambda, delta, max.support) {
   min(as.integer(max.support),
       as.integer(ceiling(max(lambda) + 12 * sqrt(max(lambda) * max(delta, 0.1)) + 30)))
+}
+## the smallest count whose cdf reaches u: evaluated to the rough cut above, then to the guard when an
+## overdispersed tail reaches past it; NA when the pmf is unavailable (the guard binds at this rate)
+.gec_quantile1 <- function(u, lambda, delta, max.support, tol = 1e-12) {
+  for (km in unique(c(.gec_kmax_qr(lambda, delta, max.support), as.integer(max.support)))) {
+    pr <- as.numeric(gec_pmf_cpp(lambda, delta, km, as.integer(max.support)))
+    if (anyNA(pr)) return(NA_real_)
+    idx <- which(cumsum(pr) >= u - tol)[1L]
+    if (!is.na(idx)) return(as.numeric(idx - 1L))
+  }
+  as.numeric(max.support)
+}
+.gec_warn_guard <- function(out, max.support) {
+  if (anyNA(out)) warning("'max.support' (", max.support, ") binds for ", sum(is.na(out)), " rate(s): NA returned; raise it.",
+                          call. = FALSE)
+  out
 }
 
 #' Generalized event count (Katz) distribution functions
@@ -208,11 +200,8 @@ qgec <- function(p, lambda, delta, max.support = 500, lower.tail = TRUE, log.p =
   if (length(delta) != 1L) stop("'delta' must be a single value.")
   if (log.p) p <- exp(p); if (!lower.tail) p <- 1 - p
   n <- max(length(p), length(lambda)); p <- rep_len(p, n); lambda <- rep_len(lambda, n)
-  vapply(seq_len(n), function(i) {
-    km <- .gec_kmax_qr(lambda[i], delta, max.support)
-    cdf <- cumsum(as.numeric(gec_pmf_cpp(lambda[i], delta, km, as.integer(max.support))))
-    idx <- which(cdf >= p[i] - 1e-12)[1L]; as.numeric(if (is.na(idx)) km else idx - 1L)
-  }, numeric(1))
+  out <- vapply(seq_len(n), function(i) .gec_quantile1(p[i], lambda[i], delta, max.support), numeric(1))
+  .gec_warn_guard(out, max.support)
 }
 #' @rdname gec-distribution
 #' @export
@@ -221,9 +210,7 @@ rgec <- function(n, lambda, delta, max.support = 500) {
   if (n == 0) return(numeric(0))
   if (length(delta) != 1L) stop("'delta' must be a single value.")
   lambda <- rep_len(lambda, n)
-  vapply(seq_len(n), function(i) {
-    km <- .gec_kmax_qr(lambda[i], delta, max.support)
-    cdf <- cumsum(as.numeric(gec_pmf_cpp(lambda[i], delta, km, as.integer(max.support))))
-    idx <- which(cdf >= stats::runif(1))[1L]; as.numeric(if (is.na(idx)) km else idx - 1L)
-  }, numeric(1))
+  out <- vapply(seq_len(n), function(i) .gec_quantile1(stats::runif(1), lambda[i], delta, max.support, tol = 0),
+                numeric(1))
+  .gec_warn_guard(out, max.support)
 }

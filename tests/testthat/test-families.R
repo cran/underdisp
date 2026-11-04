@@ -125,5 +125,34 @@ test_that("the compiled double-Poisson and generalized-Poisson normalizers match
     expect_true(is.finite(r[1, 1]) && abs(r[1, 1] - lse(lt[ok])) < 1e-9,
                 info = sprintf("mu %g lambda %g: C++ logZ %.12g, R logZ %.12g, K %d, finite terms %d", mu, la, r[1, 1], lse(lt[ok]), K, sum(ok)))
     if (la < 0) { p <- exp(lt[ok] - lse(lt[ok])); expect_equal(r[1, 2], sum((0:K)[ok] * p), tolerance = 1e-8) }
+    else expect_identical(r[1, 1], 0)                          # the closed form: the pmf sums to one
   }
+})
+
+test_that("normalizers refuse a sum their support cap would truncate", {
+  ns <- asNamespace("underdisp")
+  ## the rate-parameterized COM-Poisson, in C++ and in R: a mean of order 1e5 or more is NA, smaller rates unchanged
+  expect_true(is.na(ns$cmp_logZ_cpp(log(2e5), 1))); expect_true(all(is.na(ns$cmp_moments_cpp(log(2e5), 1))))
+  expect_true(is.na(ns$.compois_logZ(2e5, 1))); expect_true(is.na(dcompois(5, lambda = 2e5, nu = 1)))
+  expect_equal(ns$.compois_logZ(c(3, 2e5), 1), c(3, NA))   # per rate: the Poisson's log Z is lambda
+  expect_equal(sum(dcompois(0:200, lambda = 50, nu = 1)), 1, tolerance = 1e-12)
+  ## the double Poisson, the generalized Poisson below zero and the EWP
+  expect_true(all(is.na(ns$dp_norm_cpp(2e5, 1, 100000L)))); expect_true(all(is.finite(ns$dp_norm_cpp(1e3, 1, 100000L))))
+  expect_true(all(is.na(ns$gp_norm_cpp(2e5, -0.5, 100000L)))); expect_true(all(is.finite(ns$gp_norm_cpp(1e3, -0.5, 100000L))))
+  expect_true(all(is.na(ns$ewp_norm_cpp(log(2e5), 1, 1)))); expect_true(all(is.finite(ns$ewp_norm_cpp(log(50), 1, 1))))
+  ## the generalized Poisson at lambda >= 0 has the closed-form normalizer, so a long tail is not refused
+  g <- ns$gp_norm_cpp(c(10, 2e5), 0.99, 100000L)
+  expect_identical(g[, 1], c(0, 0)); expect_equal(g[, 3], c(10, 2e5) / 0.01^2)
+  expect_equal(ns$.count_fam("genpois")$pvec(10, 0.99, 50), exp(ns$.gp_lterm(0:50, 10, 0.99)))
+  ## a fit whose search reaches such means treats them as infeasible: the log-likelihood is finite at the optimum
+  set.seed(3); d <- data.frame(y = rpois(80, 4))
+  for (fm in c("compois", "doublepois", "genpois", "ewp3"))
+    expect_true(is.finite(suppressWarnings(count_reg(y ~ 1, d, family = fm))$loglik), info = fm)
+})
+
+test_that("the mean-parameterized COM-Poisson refuses means its support cap would truncate", {
+  cl <- underdisp:::cmp_loglambda_cpp; cm <- underdisp:::cmp_moments_cpp
+  mu <- c(0.5, 3, 40); expect_equal(cm(cl(mu, 1.3), 1.3)[, 1], mu, tolerance = 1e-9)
+  t <- system.time(r <- cl(rep(1e6, 20), 0.01))[["elapsed"]]
+  expect_true(all(is.na(r))); expect_lt(t, 10)
 })

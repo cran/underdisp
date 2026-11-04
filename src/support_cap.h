@@ -1,7 +1,10 @@
 // support_cap.h -- one rule for converting a ceiling to an int.
 //
-// The CPB's support runs 0..floor(n) with n = lambda / (1 - alpha), and the GEC's
-// 0..floor(mu / (1 - delta)). Both diverge as the dispersion parameter approaches
+// The CPB's floor support runs 0..floor(n) with n = lambda / (1 - alpha), and
+// King's CPB and the GEC run 0..ceiling(n), n = mu / (1 - delta). The ceilings
+// are converted to an int only by the floor support's pmf and by the
+// fixed-effects searches' breakpoint bookkeeping (King's pmf steps through the
+// support without forming the ceiling). Both diverge as the dispersion parameter approaches
 // its equidispersed limit, and an optimizer reaches that limit exactly: alpha is
 // carried on the logit scale, and plogis() returns exactly 1 once its argument
 // passes about 40, because 1 - 4e-18 is not a representable double. The division

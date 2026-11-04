@@ -10,7 +10,7 @@ test_that("predict.hurdle_cpb marginal E(Y) is full-length and not recycled", {
   hc <- hurdle_cpb(y ~ x, data.frame(y = y, x = x, z = z), participation = ~ z, se = "none")
   pm <- predict(hc, type = "response")
   expect_length(pm, n)
-  expect_equal(unname(pm), unname(hc$p_full * underdisp:::.cpb_ztmean(hc$lambda_full, hc$intensity$alpha)), tolerance = 1e-9)  # not the recycled short vector
+  expect_equal(unname(pm), unname(hc$p_full * underdisp:::.cpb_ztmean(hc$lambda_full, hc$intensity$alpha, hc$support)), tolerance = 1e-9)  # not the recycled short vector
 })
 
 test_that("predict.cpb applies the stored offset", {

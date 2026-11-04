@@ -18,7 +18,8 @@ gec_fe(
   inner_it = 30L,
   maxit = 3000L,
   reltol = 1e-07,
-  bias_correct = c("none", "jackknife")
+  bias_correct = c("none", "jackknife"),
+  time = NULL
 )
 }
 \arguments{
@@ -45,7 +46,8 @@ see \code{\link[=cpb]{cpb()}}.}
 
 \item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
 
-\item{max.support}{Guard on the maximum evaluated support.}
+\item{max.support}{Guard on the evaluated support; \code{NULL} (default) sets
+\code{max(500, 10 * max(y))}. See \code{\link[=gec]{gec()}}.}
 
 \item{inner_it}{Golden-section iterations for each unit's inner maximization.}
 
@@ -53,6 +55,9 @@ see \code{\link[=cpb]{cpb()}}.}
 
 \item{bias_correct}{\code{"none"} (default) or \code{"jackknife"}, the split-panel
 jackknife correction for the 1/T incidental-parameters bias (see Details).}
+
+\item{time}{Name of the column of \code{data} that orders each unit's rows in
+time; required by \code{bias_correct = "jackknife"} (see \code{\link[=cpb_fe]{cpb_fe()}}).}
 }
 \value{
 An object of class \code{c("gec_fe", "gec")}.
@@ -71,8 +76,11 @@ section on a bracket around the unit's Poisson intercept, expanded while the max
 sits at an edge; a maximum at a kink is tracked in the analytic gradient of the
 concentrated likelihood, which the outer BFGS uses. The feasibility floor is exact:
 every count must lie in \verb{0..ceiling(mu/(1-delta))}.
-Runtime: about twice that of \code{\link[=cpb_fe]{cpb_fe()}} on the same panel (the Katz recursion
-runs the whole support), so a 2,600-row panel in 146 units takes about two minutes.
+Runtime: about one and a half times that of \code{\link[=cpb_fe]{cpb_fe()}} on the same panel (the
+Katz recursion runs the whole support): on the positive counts of the bundled
+peacekeeping panel, 2,602 rows in 146 units, \code{gec_fe()} takes about two and a
+half minutes and \code{cpb_fe()} about one and a half, and the two return the same
+fit.
 }
 \details{
 Limitation: unlike \code{\link[=cpb_fe]{cpb_fe()}}, \code{gec_fe()} has no \code{truncated} argument -- a
@@ -82,15 +90,18 @@ zero-truncated GEC with fixed effects, enter the unit factor as dummies in
 
 Short panels: \code{delta} and the fixed effects carry the incidental-parameters
 bias of nonlinear fixed-effects estimation, of order 1/T; treat \code{delta}
-cautiously below about T = 30. The covariate coefficients are not materially
-affected. \code{bias_correct = "jackknife"} removes the leading 1/T term by the
+cautiously below about T = 30. The covariate coefficients carry a smaller bias of
+the same order. \code{bias_correct = "jackknife"} removes the leading 1/T term by the
 split-panel jackknife exactly as in \code{\link[=cpb_fe]{cpb_fe()}}: refit on each unit's temporal
 halves and report \code{2 * full - mean(halves)}, with the unit effects and fitted
 values re-concentrated at the corrected parameters and \code{logLik}/\code{AIC} kept at
 the maximum-likelihood fit (uncorrected estimates in \verb{$uncorrected}). The
 same time-homogeneity validity gate applies: on panels where the two halves
-do not estimate a common parameter the correction is REFUSED with a warning
-and the maximum-likelihood fit is returned (see \code{\link[=cpb_fe]{cpb_fe()}}, Details).
+do not estimate a common parameter the correction is refused with a warning
+and the maximum-likelihood fit is returned (see \code{\link[=cpb_fe]{cpb_fe()}}, Details). As
+there, the covariate coefficients are corrected too, and with
+\code{se = "bootstrap"} each replicate is corrected the same way, so the standard
+errors include the correction's own variance.
 }
 \examples{
 \donttest{

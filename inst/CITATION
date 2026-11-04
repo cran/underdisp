@@ -5,17 +5,17 @@ bibentry(
   title   = "underdisp: Diagnostics and Models for Underdispersed Count Data",
   author  = person("Benjamin E.", "Bagozzi"),
   year    = "2026",
-  note    = "R package version 0.1.1",
+  note    = sprintf("R package version %s", meta$Version),
   url     = "https://CRAN.R-project.org/package=underdisp",
-  textVersion = "Bagozzi, B.E. (2026). underdisp: Diagnostics and Models for Underdispersed Count Data. R package version 0.1.1. https://CRAN.R-project.org/package=underdisp"
+  textVersion = sprintf("Bagozzi, B.E. (2026). underdisp: Diagnostics and Models for Underdispersed Count Data. R package version %s. https://CRAN.R-project.org/package=underdisp", meta$Version)
 )
 
 bibentry(
   bibtype = "Unpublished",
-  title   = "Revisiting underdispersion in political science",
+  title   = "Revisiting Underdispersion in Political Science: Diagnostics and a Typology for Count Data",
   author  = person("Benjamin E.", "Bagozzi"),
   year    = "2026",
   note    = "Working paper",
-  textVersion = "Bagozzi, B.E. (2026). Revisiting underdispersion in political science. Working paper.",
+  textVersion = "Bagozzi, B.E. (2026). Revisiting Underdispersion in Political Science: Diagnostics and a Typology for Count Data. Working paper.",
   header  = "The at-risk screen, the calibrated threshold, and the fixed-effects results are developed in:"
 )

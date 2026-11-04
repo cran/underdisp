@@ -11,7 +11,8 @@ cv_score(
   kmax = NULL,
   folds = NULL,
   cores = 1L,
-  weights = NULL
+  weights = NULL,
+  offset = NULL
 )
 }
 \arguments{
@@ -37,6 +38,11 @@ name of \code{data} or a numeric vector with one value per row. The mean scores
 are then weighted means, so a row of weight w counts as w held-out
 observations (the folds assign whole rows). The fold fits see the weights
 only through \code{fitfun}, so pass them there as well.}
+
+\item{offset}{Optional offset (log scale) of the held-out rows: a column name
+of \code{data} or a numeric vector with one value per row, split with the folds.
+It is needed when \code{fitfun} gives its fit the offset as a vector. The fold
+fits see the offset only through \code{fitfun}.}
 }
 \value{
 An object of class \code{"cv_score"}: a list with the mean held-out
@@ -46,13 +52,15 @@ the \code{folds} used.
 \description{
 K-fold cross-validated log score and RPS: the data are split into \code{k} folds,
 the model is refit on each training set via \code{fitfun}, and its predicted
-distribution is scored on the held-out fold. Because the score is genuinely
-out of sample it penalizes over-parameterization, so it is the honest
+distribution is scored on the held-out fold. Because the score is out of
+sample it penalizes over-parameterization, so it is the appropriate
 criterion for comparing models that differ in the number of parameters (for
 example a hurdle with per-unit participation fixed effects against a
 zero-inflated model). Per-observation held-out scores are returned so two
 models fit on the \emph{same} folds can be compared with a paired, cluster-robust
-test.
+test. Each fold is scored as \code{\link[=score]{score()}} scores \code{newdata}: a unit, or a level
+of any factor, that the training folds lack enters at the reference unit,
+and a unit a two-part fit holds at a limit is scored at that limit.
 }
 \examples{
 \donttest{

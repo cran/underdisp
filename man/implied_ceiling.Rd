@@ -4,7 +4,7 @@
 \alias{implied_ceiling}
 \alias{implied_ceiling.cpb}
 \alias{implied_ceiling.cpb_fe}
-\title{Implied ceiling with a profile-likelihood interval}
+\title{Implied ceiling, and the ceiling at the limits of alpha's interval}
 \usage{
 implied_ceiling(object, ...)
 
@@ -22,16 +22,33 @@ implied_ceiling(object, ...)
 \item{level}{Confidence level (default 0.95).}
 }
 \value{
-A data frame with \code{lambda}, \code{ceiling}, and \code{lower}/\code{upper} bounds.
+A data frame with \code{lambda}, \code{ceiling}, \code{max_count} (the largest count
+with positive probability), and \code{ceiling_at_alpha_lower} /
+\code{ceiling_at_alpha_upper}, the ceiling at the fitted rate with \code{alpha} at the
+lower and upper limits of its interval (for \code{cpb} fits, and hurdles with a
+\code{cpb} intensity).
 }
 \description{
-Returns the observation- (or profile-) specific ceiling lambda/(1-alpha), with
-bounds that carry the limits of the interval for \code{alpha} (see \code{\link[=alpha_confint]{alpha_confint()}};
-calibrated when the fit went through \code{\link[=calibrate_alpha]{calibrate_alpha()}}) to the ceiling at the
-fitted rate. The rate is held at its estimate: coefficient uncertainty in lambda
-is not propagated, so the bounds are not a confidence interval for the ceiling;
-use \code{\link[=first_difference]{first_difference()}} with \code{quantity = "ceiling"} for a fully bootstrapped
-contrast.
+Returns the observation- (or profile-) specific ceiling lambda/(1-alpha), and
+the ceiling at the fitted rate with \code{alpha} at the limits of its interval
+(see \code{\link[=alpha_confint]{alpha_confint()}}; calibrated when the fit went through
+\code{\link[=calibrate_alpha]{calibrate_alpha()}}). Those two columns hold the rate at its estimate, so
+they show how far the dispersion's uncertainty alone moves the ceiling and
+are not a confidence interval for it; \code{\link[=first_difference]{first_difference()}} with
+\code{quantity = "ceiling"} propagates the coefficients' uncertainty too. The ceiling is the CPB's continuous number of trials. No count above
+its integer ceiling has positive probability on King's support (the default),
+and none above its integer floor on the floor support (\code{support = "floor"});
+that largest feasible count is returned as \code{max_count}. Whether held-out
+counts respect the bound is tested by \code{\link[=ceiling_exceedance]{ceiling_exceedance()}}.
+}
+\details{
+The ceiling is the fitted distribution's support end. With the rate and
+\code{alpha} it is fixed by the CPB's variance-mean link, so it is a bound on the
+counts only when the CPB is the data's process. On counts with a common
+hard bound from another process (binomial counts out of six trials, say),
+the fitted ceiling follows the mean and the dispersion instead: in one
+simulation it ran from 3 where the mean was low to 12 where it was high,
+below the true bound in the first case and well above it in the second.
 }
 \examples{
 set.seed(6); x <- rnorm(300)

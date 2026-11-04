@@ -34,7 +34,28 @@ within-unit underdispersion is recovered.}
 
 \item{part_fe}{Optional column name for fixed effects in the participation
 model (added as factors). Units with no within-unit variation in
-participation are uninformative for a fixed-effects logit.}
+participation are uninformative for a fixed-effects logit, and the dummy
+logit's coefficients carry the incidental-parameters bias of order 1/T (in
+short panels the slopes are inflated, roughly toward twice their value at
+T = 2); the split-panel jackknife (\code{bias_correct}) corrects only the
+intensity. The hurdle's likelihood separates its two parts, so for the
+logit link a conditional logit on the same data
+(\code{survival::clogit()}) gives participation slopes free of that bias,
+and an analytical correction (the \pkg{bife} package, for the logit and
+the probit) reduces it to second order; the hurdle's predictions and
+quantities of interest use the dummy logit's unit effects. On King's
+support the dummy of a unit that never participates, at minus infinity, is
+not counted in the degrees of freedom (see \code{\link[=compare_models]{compare_models()}}, Degrees of
+freedom). In new data (\code{\link[=predict.hurdle_cpb]{predict.hurdle_cpb()}}, \code{\link[=score]{score()}}, \code{\link[=cv_score]{cv_score()}}) such
+a unit's rows get the participation probability at that limit, zero, and
+those of a unit whose every count is positive (\code{part_one_units}) one; a unit
+the fit has not seen, or every row of \code{newdata} without the \code{part_fe}
+column, enters at the reference unit of the units the data identify. The
+participation equation is checked for separation by \code{\link[=zi_cpb]{zi_cpb()}}'s rule
+(Separation; component \code{part_separation}). On the floor support these
+dummies are counted in the degrees of freedom, new rows of these units are
+evaluated at the dummies' fitted values, and an unseen unit enters at the
+mean of all the unit dummies.}
 
 \item{link}{Link for the participation model: \code{"logit"} (default), \code{"probit"},
 or \code{"cloglog"}. Positive participation coefficients raise the probability of
@@ -44,10 +65,10 @@ a positive count.}
 exposure): a numeric vector or the name of a column in \code{data}.}
 
 \item{cluster}{Optional cluster identifier (a column name in \code{data} or a
-vector) for cluster-robust bootstrap inference on the intensity
-coefficients; see \code{\link[=cpb]{cpb()}}. Cluster-robust errors for the participation
-logit are available directly via
-\code{sandwich::vcovCL(fit$participation, cluster = ...)}.}
+vector). The participation equation's standard errors are then
+cluster-robust (the sandwich, with the G/(G - 1) factor), and with
+\code{se = "bootstrap"} the intensity's bootstrap resamples whole clusters; see
+\code{\link[=cpb]{cpb()}}.}
 
 \item{se}{Inference for the intensity coefficients: \code{"none"} or \code{"bootstrap"}.}
 
@@ -58,7 +79,8 @@ applied to both margins; see \code{\link[=cpb]{cpb()}}.}
 
 \item{cores}{Worker processes for the intensity bootstrap; see \code{\link[=cpb]{cpb()}}.}
 
-\item{...}{Passed to \code{\link[=cpb]{cpb()}} or \code{\link[=cpb_fe]{cpb_fe()}}.}
+\item{...}{Passed to \code{\link[=cpb]{cpb()}} or \code{\link[=cpb_fe]{cpb_fe()}}, including \code{support} (King's CPB,
+\code{"ceiling"}, by default; see \code{\link[=cpb]{cpb()}}).}
 }
 \value{
 An object of class \code{"hurdle_cpb"} with elements \code{participation} (a

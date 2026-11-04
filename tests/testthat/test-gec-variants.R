@@ -32,8 +32,10 @@ test_that("zi_test handles the GEC family and enforces the nest", {
   skip_on_cran()
   set.seed(2); n <- 800; x <- rnorm(n)
   dz <- data.frame(y = rzicpb(n, exp(1.3 + 0.4 * x), 0.5, plogis(-0.3)), x = x)
-  zg <- zi_gec(y ~ x, dz); g <- gec(y ~ x, dz, se = "none")
+  zg <- zi_gec(y ~ x, dz, zero = ~ 1); g <- gec(y ~ x, dz, se = "none")
   tt <- zi_test(g, zg)
+  ## covariate-dependent inflation has no boundary reference distribution
+  expect_error(zi_test(g, zi_gec(y ~ x, dz)), "covariate-dependent")
   expect_s3_class(tt, "zi_test")
   expect_identical(tt$family, "GEC")
   ## family mismatch: a CPB is not the nest of a zi_gec

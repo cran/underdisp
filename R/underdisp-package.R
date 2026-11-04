@@ -16,14 +16,17 @@
 #' ([hurdle_cpb()], [zi_cpb()], [hurdle_gec()], [zi_gec()]); the matched count
 #' families through one interface, [count_reg()], [hurdle_count()],
 #' [zi_count()] (Poisson, negative binomial, COM-Poisson in the rate and the
-#' mean parameterization, generalized Poisson, gamma-count, double Poisson),
-#' all with offsets, frequency weights, fixed effects, and analytic, robust,
-#' cluster, or bootstrap inference.
+#' mean parameterization, generalized Poisson, gamma-count, double Poisson,
+#' hyper-Poisson, exponentially weighted Poisson), all with offsets and
+#' frequency weights, and with fixed effects except in the count equation of
+#' the GEC's two-part forms (which takes dummies in its formula); the CPB and
+#' GEC classes take bootstrap inference, the count families analytic, robust or
+#' clustered errors.
 #'
 #' @section Comparison and quantities of interest:
 #' [compare_models()], [score()], [cv_score()]; [predict()],
-#' [implied_ceiling()], [irr()], [first_difference()] (with the
-#' extensive/intensive decomposition for the two-part models), [confint()] for
+#' [implied_ceiling()], [ceiling_exceedance()], [irr()], [first_difference()] (with the
+#' extensive/intensive decomposition for the two-part models), [ame()], [confint()] for
 #' every class, [simulate()] for DHARMa diagnostics, and broom / texreg /
 #' modelsummary support.
 #'

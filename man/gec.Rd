@@ -14,7 +14,7 @@ gec(
   offset = NULL,
   weights = NULL,
   cores = 1L,
-  max.support = 500,
+  max.support = NULL,
   maxit = 20000,
   reltol = 1e-08
 )
@@ -42,7 +42,10 @@ see \code{\link[=cpb]{cpb()}}.}
 
 \item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
 
-\item{max.support}{Guard on the maximum evaluated support.}
+\item{max.support}{Guard on the evaluated support: the GEC's pmf is evaluated
+up to that many points (on an overdispersed fit, the guard binds where the
+tail beyond it carries mass; see \code{\link[=dgec]{dgec()}}). The default \code{NULL} sets it to
+\code{max(500, 10 * max(y))}, as for \code{\link[=cpb]{cpb()}}.}
 
 \item{maxit, reltol}{Optimizer controls.}
 }
@@ -54,12 +57,14 @@ dispersion), \code{loglik}, bootstrap standard errors, and bookkeeping.
 Fits King's generalized event count model, a Katz-family count regression
 whose single dispersion parameter \code{delta} (the variance-to-mean ratio) is
 estimated freely and spans underdispersion (\code{delta < 1}, a finite-support
-member; the continuous parameter binomial is this cell), equidispersion
-(\code{delta = 1}, Poisson), and overdispersion (\code{delta > 1}, the negative
-binomial). Unlike \code{\link[=cpb]{cpb()}}, which fixes the direction of dispersion to
-under, \code{gec()} lets the data choose. The Katz recursion delivers exact first
-and second moments---the Winkelmann--Signorino--King correction realized
-directly on an unbounded support---and the likelihood is evaluated in C++.
+member, the continuous parameter binomial of \code{\link[=cpb]{cpb()}} at \code{alpha = delta}),
+equidispersion (\code{delta = 1}, Poisson), and overdispersion (\code{delta > 1}, the
+negative binomial). Unlike \code{\link[=cpb]{cpb()}}, which fixes the direction of dispersion to
+under, \code{gec()} lets the data choose; wherever its estimate of \code{delta} is below
+one the two return the same fit. The Katz recursion delivers exact first
+and second moments, summed over the support (finite for \code{delta < 1}, where
+they are the correction of Winkelmann, Signorino and King), and the
+likelihood is evaluated in C++.
 For \code{delta < 1} the support is finite and the renormalized distribution's
 mean and variance equal \verb{exp(x'b)} and \verb{delta * exp(x'b)} only when
 \verb{exp(x'b)/(1 - delta)} is an integer, so \verb{exp(x'b)} is the rate parameter of

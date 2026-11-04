@@ -8,15 +8,15 @@ zi_test(object, object2 = NULL, data = NULL, ...)
 }
 \arguments{
 \item{object}{Either a model formula --- then \code{data} is required and the
-nested pair is fit internally --- or a fitted model (\code{cpb}, \code{cpb_fe}, or
-\code{zi_cpb}).}
+nested pair is fit internally --- or a fitted model (\code{cpb}, \code{gec},
+\code{zi_cpb}, or \code{zi_gec}).}
 
 \item{object2}{The second argument: the data frame when \code{object} is a formula
 (so \code{zi_test(y ~ x, mydata)} works), or the second fitted model when
 \code{object} is a fit. In the model interface exactly one of the two models must
-be a zero-inflated \code{zi_cpb} and the other its non-inflated nest (\code{cpb} or
-\code{cpb_fe}); the two may carry any combination of fixed effects and
-robust/clustered standard errors.}
+be a zero-inflated \code{zi_cpb} (or \code{zi_gec}) with intercept-only inflation and
+the other its untruncated non-inflated nest (\code{cpb}, or \code{gec}) on the same
+data.}
 
 \item{data}{A data frame; an alternative to passing it as \code{object2}.}
 
@@ -33,9 +33,15 @@ probability of zero. Because that value lies on the boundary of the parameter
 space, the LR statistic follows a \eqn{\tfrac12\chi^2_0 + \tfrac12\chi^2_1}
 mixture (Self and Liang 1987), which halves the naive \eqn{\chi^2_1} p-value.
 The test uses an intercept-only structural-zero probability, so it is a clean
-single-parameter boundary test; a covariate-dependent structural-zero model is
-better compared with information criteria and proper scores via
-\code{\link[=compare_dispersion]{compare_dispersion()}}.
+single-parameter boundary test. Given two fitted models it refuses the cases
+where that reference distribution does not hold: a covariate-dependent
+structural-zero probability (several parameters on their boundary), a
+fixed-effects \code{zi_cpb()} (one count effect per unit, whose number grows with
+the panel, so the statistic has no fixed-dimension boundary reference), a
+separated zero equation, models fit to different data, a zero-truncated
+nest, and CPB models on different supports. It is not a test of a hurdle
+against a mixture, which are not nested. Compare those with
+\code{\link[=compare_models]{compare_models()}}.
 }
 \examples{
 \donttest{

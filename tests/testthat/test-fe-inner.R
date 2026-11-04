@@ -1,13 +1,14 @@
 ## The concentrated fixed-effects likelihood: each unit's intercept is solved to
-## the supremum of a saw-tooth objective (src/cpb_fe.cpp, src/gec_fe.cpp). These
+## the supremum of its objective (src/cpb_fe.cpp, src/gec_fe.cpp), a saw-tooth on
+## the floor support and a continuous function with kinks on King's. These
 ## tests pin the inner search against an R-side brute force and check that the
-## reported log-likelihood is attained at the reported intercepts.
+## reported log-likelihood is attained at the reported intercepts, on both supports.
 
 testthat::skip_on_cran()   # validation battery: runs in the package's CI (NOT_CRAN = true), not on CRAN
 
-brute_unit <- function(yy, oo, alpha, width = 4, by = 0.002) {
+brute_unit <- function(yy, oo, alpha, width = 4, by = 0.002, support = "ceiling") {
   if (sum(yy) == 0) return(0)                 # all-zero unit: the supremum is P(0) -> 1 as the rate -> 0
-  ll <- function(a) { v <- sum(dcpb(yy, exp(a + oo), alpha, log = TRUE)); if (is.finite(v)) v else -1e300 }
+  ll <- function(a) { v <- sum(dcpb(yy, exp(a + oo), alpha, log = TRUE, support = support)); if (is.finite(v)) v else -1e300 }
   ap <- log(sum(yy) / sum(exp(oo)))
   g <- seq(ap - width, ap + width, by = by); vals <- vapply(g, ll, numeric(1))
   k <- which.max(vals)
@@ -15,44 +16,45 @@ brute_unit <- function(yy, oo, alpha, width = 4, by = 0.002) {
   max(o$objective, vals[k])
 }
 
-test_that("cpb_fe's inner search is never below a brute-force profile and its loglik is attained", {
+for (sup in c("floor", "ceiling")) test_that(paste0("cpb_fe's inner search is never below a brute-force profile and its loglik is attained (", sup, ")"), {
   set.seed(11); n <- 300; x <- rnorm(n)
-  d <- data.frame(y = rcpb(n, exp(1.0 + 0.5 * x), 0.5), x = x, u = factor(sample(1:12, n, TRUE)))
-  f <- cpb_fe(y ~ x, d, fe = "u")
+  d <- data.frame(y = rcpb(n, exp(1.0 + 0.5 * x), 0.5, support = sup), x = x, u = factor(sample(1:12, n, TRUE)))
+  f <- cpb_fe(y ~ x, d, fe = "u", support = sup)
   d <- d[order(d$u), ]
   ## (a) the reported loglik is the CPB log-likelihood at the reported parameters
   lam <- exp(f$fe[as.character(d$u)] + f$coefficients[["x"]] * d$x)
-  expect_equal(sum(dcpb(d$y, lam, f$alpha, log = TRUE)), f$loglik, tolerance = 1e-8)
+  expect_equal(sum(dcpb(d$y, lam, f$alpha, log = TRUE, support = sup)), f$loglik, tolerance = 1e-8)
   ## (b) per unit, the compiled inner search at the fitted (beta, alpha) is at
   ##     least the brute-force supremum (a 0.002 grid refined by optimize())
   tot <- 0
   for (u in levels(d$u)) {
     idx <- d$u == u
-    tot <- tot + brute_unit(d$y[idx], f$coefficients[["x"]] * d$x[idx], f$alpha)
+    tot <- tot + brute_unit(d$y[idx], f$coefficients[["x"]] * d$x[idx], f$alpha, support = sup)
   }
   expect_gte(f$loglik, tot - 1e-4)   # the supremum is a left limit: attained to O(1e-8) in the intercept
-  ## (c) the fitted intercepts are feasible: every count is below its ceiling
-  expect_true(all(d$y <= floor(lam / (1 - f$alpha) + 1e-9)))
+  ## (c) the fitted intercepts are feasible: every count lies in its support
+  top <- if (sup == "floor") floor(lam / (1 - f$alpha) + 1e-9) else ceiling(lam / (1 - f$alpha) - 1e-9)
+  expect_true(all(d$y <= top))
 })
 
-test_that("cpb_fe's inner search handles small ceilings, where the teeth are wide and tall", {
+for (sup in c("floor", "ceiling")) test_that(paste0("cpb_fe's inner search handles small ceilings (", sup, ")"), {
   set.seed(5); n <- 400; x <- rnorm(n); u <- factor(sample(1:16, n, TRUE)); ue <- rnorm(16, 0, 0.6)[u]
-  d <- data.frame(y = rcpb(n, exp(0.2 + 0.3 * x + ue), 0.4), x = x, u = u)
-  f <- cpb_fe(y ~ x, d, fe = "u")
+  d <- data.frame(y = rcpb(n, exp(0.2 + 0.3 * x + ue), 0.4, support = sup), x = x, u = u)
+  f <- cpb_fe(y ~ x, d, fe = "u", support = sup)
   d <- d[order(d$u), ]
   lam <- exp(f$fe[as.character(d$u)] + f$coefficients[["x"]] * d$x)
-  expect_equal(sum(dcpb(d$y, lam, f$alpha, log = TRUE)), f$loglik, tolerance = 1e-8)
+  expect_equal(sum(dcpb(d$y, lam, f$alpha, log = TRUE, support = sup)), f$loglik, tolerance = 1e-8)
   tot <- 0
   for (u in levels(d$u)) {
     idx <- d$u == u
-    tot <- tot + brute_unit(d$y[idx], f$coefficients[["x"]] * d$x[idx], f$alpha, width = 5, by = 0.001)
+    tot <- tot + brute_unit(d$y[idx], f$coefficients[["x"]] * d$x[idx], f$alpha, width = 5, by = 0.001, support = sup)
   }
   expect_gte(f$loglik, tot - 1e-4)   # the supremum is a left limit: attained to O(1e-8) in the intercept
 })
 
 test_that("gec_fe's inner search matches a brute-force profile for an underdispersed Katz fit", {
   set.seed(4); n <- 300; x <- rnorm(n)
-  d <- data.frame(y = rcpb(n, exp(0.8 + 0.4 * x), 0.5), x = x, u = factor(sample(1:10, n, TRUE)))
+  d <- data.frame(y = rcpb(n, exp(0.8 + 0.4 * x), 0.5, support = "floor"), x = x, u = factor(sample(1:10, n, TRUE)))
   f <- gec_fe(y ~ x, d, fe = "u")
   expect_lt(f$delta, 1)
   d <- d[order(d$u), ]
@@ -72,14 +74,14 @@ test_that("gec_fe's inner search matches a brute-force profile for an underdispe
 
 test_that("the concentrated CPB profile in alpha is smooth at the fit (no saw-tooth in the outer objective)", {
   set.seed(11); n <- 300; x <- rnorm(n)
-  d <- data.frame(y = rcpb(n, exp(1.0 + 0.5 * x), 0.5), x = x, u = factor(sample(1:12, n, TRUE)))
-  f <- cpb_fe(y ~ x, d, fe = "u")
+  d <- data.frame(y = rcpb(n, exp(1.0 + 0.5 * x), 0.5, support = "floor"), x = x, u = factor(sample(1:12, n, TRUE)))
+  f <- cpb_fe(y ~ x, d, fe = "u", support = "floor")
   d <- d[order(d$u), ]
   X <- matrix(d$x, ncol = 1); Y <- as.integer(d$y); uf <- factor(d$u); nu <- nlevels(uf)
   ustart <- as.integer(c(0, cumsum(tabulate(as.integer(uf), nu))))
   off <- rep(0, n); wv <- rep(1, n); ms <- f$max.support
   prof <- vapply(f$alpha + seq(-0.02, 0.02, by = 0.004), function(a)
-    -underdisp:::cpb_fe_nll_cpp(c(f$coefficients[["x"]], qlogis(a)), X, Y, off, wv, ustart, nu, ms, FALSE, 30L, numeric(0))[[1L]],
+    -underdisp:::cpb_fe_nll_cpp(c(f$coefficients[["x"]], qlogis(a)), X, Y, off, wv, ustart, nu, ms, FALSE, 30L, numeric(0), TRUE)[[1L]],
     numeric(1))
   ## the profile peaks at the fit and its second differences are all negative (concave, no jags)
   expect_equal(which.max(prof), 6L)

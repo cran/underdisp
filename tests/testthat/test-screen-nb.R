@@ -6,7 +6,7 @@ test_that("the NB p-value is asymptotic in the fast mode and bootstrapped in boo
   s0 <- suppressWarnings(ud_screen(y ~ x, data = d, run_cpb = FALSE, run_gp = FALSE, run_comp = FALSE))
   expect_identical(s0$p_nb_method, "asymptotic")
   expect_equal(s0$p_nb, 0.5 * pchisq(max(s0$lr_nb, 0), 1, lower.tail = FALSE))
-  expect_output(print(s0), "asymptotic, conservative")
+  expect_output(print(s0), "asymptotic boundary mixture")
   set.seed(5)
   s1 <- suppressWarnings(ud_screen(y ~ x, data = d, run_cpb = FALSE, run_gp = FALSE, run_comp = FALSE,
                                    ztp_threshold = "bootstrap", ztp_boot_B = 19))

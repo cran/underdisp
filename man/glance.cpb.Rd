@@ -11,7 +11,7 @@
 \alias{glance.count_reg}
 \alias{glance.zi_count}
 \alias{glance.hurdle_count}
-\title{Glance at a CPB fit (broom method)}
+\title{Glance at a fitted model (broom method)}
 \usage{
 \method{glance}{cpb}(x, ...)
 
@@ -34,7 +34,7 @@
 \method{glance}{hurdle_count}(x, ...)
 }
 \arguments{
-\item{x}{A \code{"cpb"} object.}
+\item{x}{A fitted model from this package.}
 
 \item{...}{Unused.}
 }
@@ -42,5 +42,14 @@
 A one-row data frame of fit statistics.
 }
 \description{
-Glance at a CPB fit (broom method)
+One row of fit statistics for every model class of the package:
+\code{logLik}, \code{AIC}, \code{BIC}, \code{df} and \code{nobs} (the weight total of a weighted fit),
+the dispersion parameter as \code{dispersion} with its name
+(\code{dispersion_parameter}) and the direction its estimate points
+(\code{dispersion_direction}; the families' parameters point different ways, so
+the CPB's \code{alpha} below 1 and the gamma-count's \code{alpha} above 1 are both
+underdispersion), \code{coef_scale}, the scale of the count equation's
+coefficients (see \code{\link[=tidy.cpb]{tidy.cpb()}}), and the class's own columns (\code{alpha} for
+the CPB family, \code{family} for the matched count families, \code{n.units} for the
+fixed-effects fits).
 }

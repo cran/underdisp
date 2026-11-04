@@ -11,7 +11,7 @@
 
 test_that("the likelihood kernel rejects every ceiling past max_support, however large", {
   X <- matrix(1, 40, 1); Y <- rep(1L, 40); off <- rep(0, 40)
-  nll <- function(alpha) underdisp:::cpb_nll_cpp(c(0, log(alpha / (1 - alpha))), X, Y, off, 500L, FALSE)
+  nll <- function(alpha, fl = TRUE) underdisp:::cpb_nll_cpp(c(0, log(alpha / (1 - alpha))), X, Y, off, 500L, FALSE, fl)
 
   ## feasible ceilings give a finite objective
   expect_equal(nll(0.5), 27.725887222397784, tolerance = 1e-12)
@@ -21,6 +21,15 @@ test_that("the likelihood kernel rejects every ceiling past max_support, however
   ## int: 1e9 is merely past max_support, while 5e11 and 1e13 are past int's range entirely.
   for (a in c(1 - 1e-9, 1 - 2e-12, 1 - 1e-12, 1 - 1e-13))
     expect_identical(nll(a), 1e10)
+
+  ## King's support (support = "ceiling") truncates the sum at the pmf's numerical tail, not at the ceiling, so it
+  ## agrees with the floor support where the ceiling is an integer and approaches the Poisson (40 here) as alpha -> 1;
+  ## only the guard that bars alpha within 1e-12 of 1 still returns the sentinel.
+  expect_equal(nll(0.5, FALSE), 27.725887222397784, tolerance = 1e-12)
+  expect_equal(nll(0.9, FALSE), 37.929785636817449, tolerance = 1e-12)
+  for (a in c(1 - 1e-9, 1 - 2e-12, 1 - 1e-12))
+    expect_equal(nll(a, FALSE), 40, tolerance = 1e-8)
+  expect_identical(nll(1 - 1e-13, FALSE), 1e10)
 })
 
 test_that("a ceiling that is an exact integer keeps its own count feasible", {

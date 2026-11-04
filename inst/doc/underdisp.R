@@ -17,7 +17,7 @@ c(mean = mean(y), var = var(y), ratio = var(y) / mean(y))
 ud_screen(y ~ x, data = d, run_cpb = FALSE)
 
 ## ----fit----------------------------------------------------------------------
-fit <- cpb(y ~ x, data = d[d$y > 0, ], se = "none")
+fit <- cpb(y ~ x, data = d, truncated = FALSE, se = "none")
 summary(fit)
 
 ## ----qoi----------------------------------------------------------------------
@@ -31,10 +31,18 @@ dispersion_test(count_reg(y ~ x, data = d, family = "poisson"),
                 method = "auxiliary", alternative = "under")
 
 ## ----boot---------------------------------------------------------------------
-fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 49)   # a small B keeps the vignette quick
+fit_b <- cpb(y ~ x, data = d, truncated = FALSE, se = "bootstrap", B = 200)
 summary(fit_b)
 irr(fit_b)             # rate ratios with percentile intervals
 confint(fit_b)         # coefficients (percentile) and alpha (first-order profile likelihood)
+first_difference(fit_b, "x", from = -1, to = 1)
+predict(fit_b, newdata = data.frame(x = c(-1, 1)), interval = "confidence")
+ame(fit_b, "x", newdata = d)   # the average marginal effect over the sample
+
+## ----pml----------------------------------------------------------------------
+pml <- count_reg(y ~ x, data = d, family = "poisson", se = "robust")
+ame(pml, "x", newdata = d)     # robust Poisson
+ame(fit_b, "x", newdata = d)   # CPB
 
 ## ----gec----------------------------------------------------------------------
 gec(y ~ x, data = d, se = "none")                                  # delta ~ 0.5
@@ -55,6 +63,7 @@ dispersion_test(fe_fit, B = 0)   # the statistic against a Poisson with the same
 
 ## ----family-------------------------------------------------------------------
 compare_dispersion(y ~ x, data = d)$table
+ceiling_exceedance(cpb(y ~ x, data = d[1:300, ], truncated = FALSE, se = "none"), d[301:400, ])
 
 ## ----wider--------------------------------------------------------------------
 dw <- d[1:150, ]                         # part of the sample keeps the seven fits quick
@@ -95,10 +104,10 @@ c(weighted = count_reg(y ~ x, data = d, family = "gammacount", weights = w)$logl
 ## ----jackknife----------------------------------------------------------------
 short <- do.call(rbind, lapply(1:16, function(i) {
   xx <- rnorm(8); NN <- pmax(round(exp(1.0 + rnorm(1, 0, 0.4) + 0.3 * xx) / 0.5), 1)
-  data.frame(unit = i, x = xx, y = rbinom(8, NN, 0.5))
+  data.frame(unit = i, t = 1:8, x = xx, y = rbinom(8, NN, 0.5))
 }))
 ml <- cpb_fe(y ~ x, data = short, fe = "unit")
-jk <- cpb_fe(y ~ x, data = short, fe = "unit", bias_correct = "jackknife")
+jk <- cpb_fe(y ~ x, data = short, fe = "unit", bias_correct = "jackknife", time = "t")
 c(ml = ml$alpha, jackknife = jk$alpha)   # truth is 0.5; ML is biased downward
 
 ## ----dharma, eval = requireNamespace("DHARMa", quietly = TRUE)----------------

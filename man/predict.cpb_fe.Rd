@@ -8,24 +8,42 @@
   object,
   newdata = NULL,
   type = c("response", "rate", "link", "ceiling"),
+  offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
 \arguments{
 \item{object}{A \code{"cpb_fe"} object.}
 
-\item{newdata}{Optional covariate profiles. With \code{newdata}, predictions use the
-average unit (the mean fixed effect), since the panel's own unit effects do
-not apply to new rows.}
+\item{newdata}{Optional covariate profiles. A row whose \code{fe} column names a
+unit of the fit enters at that unit's estimated effect (as in \code{\link[=score]{score()}}
+and \code{\link[=ceiling_exceedance]{ceiling_exceedance()}}); a row of an unseen unit, or every row when
+\code{newdata} has no \code{fe} column, enters at the reference unit, the mean
+fixed effect of the units whose effect the data identify (see Details of
+\code{\link[=cpb_fe]{cpb_fe()}}).}
 
 \item{type}{\code{"response"} (the mean; for a zero-truncated fit the conditional
 mean E(Y | Y >= 1)), \code{"rate"} (the CPB rate lambda), \code{"link"} (the log
 rate), or \code{"ceiling"}.}
 
+\item{offset}{Optional offset (log scale) for the \code{newdata} rows: a numeric
+vector or a column name in \code{newdata}; by default the fit's own offset column
+is read from \code{newdata} (see \code{\link[=predict.cpb]{predict.cpb()}}).}
+
+\item{se.fit, interval, level}{Standard errors (\code{se.fit = TRUE}) and a
+\code{level} confidence interval (\code{interval = "confidence"}) of the predicted
+quantity at the rows of \code{newdata}; see \code{\link[=predict.cpb]{predict.cpb()}}.}
+
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predictions from a fixed-effects CPB fit

@@ -38,12 +38,18 @@
   as.integer(max(50L, min(K + step, 100000L)))
 }
 
-## log normalizing constant, vectorized over lambda (scalar nu), via log-sum-exp
+## log normalizing constant, vectorized over lambda (scalar nu), via log-sum-exp.
+## NA where the cap truncates the sum (the support reaches 100000 before the
+## last term has fallen 40 log units below the peak: a mean of order 1e5 or
+## more), as in src/cmp_mean.cpp, so a likelihood treats the rate as
+## infeasible instead of using an understated normalizer.
 .compois_logZ <- function(lambda, nu, kmax = NULL) {
   K <- if (is.null(kmax)) .compois_kmax(lambda, nu) else kmax
   j <- 0:K; lj <- -nu * lgamma(j + 1)
   vapply(lambda, function(l) {
-    lt <- j * log(l) + lj; m <- max(lt); m + log(sum(exp(lt - m)))
+    lt <- j * log(l) + lj; m <- max(lt)
+    if (K >= 100000L && is.finite(lt[K + 1L]) && lt[K + 1L] >= m - 40) return(NA_real_)
+    m + log(sum(exp(lt - m)))
   }, numeric(1))
 }
 
@@ -83,7 +89,9 @@
 #' @param log,log.p Return log probabilities.
 #' @param lower.tail If `TRUE` (default), \eqn{P(X \le x)}.
 #' @return `dcompois` a density, `pcompois` a CDF, `qcompois` a quantile,
-#'   `rcompois` a numeric vector of count draws.
+#'   `rcompois` a numeric vector of count draws. A rate whose normalizing sum
+#'   the 100,000-term cap would truncate (a mean of order \eqn{10^5} or more)
+#'   gives `NA`.
 #' @examples
 #' dcompois(0:5, lambda = 3, nu = 1.5)
 #' mean(rcompois(1000, lambda = 3, nu = 1.5))

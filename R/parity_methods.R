@@ -20,11 +20,8 @@ coef.cpb_fe <- function(object, ...) object$coefficients
 #' @method logLik hurdle_cpb
 #' @export
 logLik.hurdle_cpb <- function(object, ...) {
-  idf <- if (!is.null(object$intensity$df)) object$intensity$df
-         else length(object$intensity$coefficients) + 1L
-  df <- length(stats::coef(object$participation)) + idf
   ll <- as.numeric(stats::logLik(object$participation)) + object$intensity$loglik
-  structure(ll, df = df, nobs = nobs(object), class = "logLik")
+  structure(ll, df = .ud_twopart_df(object), nobs = nobs(object), class = "logLik")
 }
 #' @method nobs hurdle_cpb
 #' @export
@@ -75,9 +72,12 @@ coef.hurdle_gec <- function(object, ...) .hurdle_coef(object)
                       c(paste0("participation:", colnames(A)), paste0("intensity:", colnames(B))))
   V
 }
+## the participation block (model-based, robust, or clustered; see participation.R) and the intensity's, NA
+## where the intensity has no inference
 .hurdle_vcov <- function(object) {
-  pv <- tryCatch(stats::vcov(object$participation), error = function(e) NULL)
+  pv <- .part_vcov(object)
   iv <- tryCatch(stats::vcov(object$intensity), error = function(e) NULL)
+  if (is.null(iv)) { nm <- names(object$int_beta); iv <- matrix(NA_real_, length(nm), length(nm), dimnames = list(nm, nm)) }
   .block_diag(pv, iv)
 }
 #' @method vcov hurdle_cpb
@@ -89,26 +89,20 @@ vcov.hurdle_gec <- function(object, ...) .hurdle_vcov(object)
 #' @method vcov hurdle_count
 #' @export
 vcov.hurdle_count <- function(object, ...) .hurdle_vcov(object)
-## the ZI bootstraps store one draw per replicate over (count, zero) coefficients
-.zi_boot_vcov <- function(object, cols, nm) {
-  if (is.null(object$boot)) return(NULL)
-  ok <- object$boot[stats::complete.cases(object$boot), cols, drop = FALSE]
-  if (nrow(ok) < 2L) return(NULL)
-  v <- stats::cov(ok); dimnames(v) <- list(nm, nm); v
+## the zero-inflated bootstraps' covariance of the count and zero-equation coefficients (the zero_fe unit dummies,
+## which are not the same units across replicates, have no draws)
+.zi_boot_vcov <- function(object) {
+  D <- .ud_draws(object)
+  if (is.null(D)) return(NULL)
+  cols <- c(paste0("count:", names(object$coefficients)), paste0("zero:", names(object$zero_coef)))
+  stats::cov(D[, intersect(cols, colnames(D)), drop = FALSE])
 }
 #' @method vcov zi_cpb
 #' @export
-vcov.zi_cpb <- function(object, ...) {
-  nb <- length(object$coefficients); nz <- length(object$zero_coef)
-  .zi_boot_vcov(object, seq_len(nb + nz), c(paste0("count:", names(object$coefficients)), paste0("zero:", names(object$zero_coef))))
-}
+vcov.zi_cpb <- function(object, ...) .zi_boot_vcov(object)
 #' @method vcov zi_gec
 #' @export
-vcov.zi_gec <- function(object, ...) {
-  nb <- length(object$coefficients); nz <- length(object$zero_coef)
-  .zi_boot_vcov(object, c(seq_len(nb), nb + 1L + seq_len(nz)),   # skip the log-delta column
-                c(paste0("count:", names(object$coefficients)), paste0("zero:", names(object$zero_coef))))
-}
+vcov.zi_gec <- function(object, ...) .zi_boot_vcov(object)
 
 ## --- confidence-interval parity ----------------------------------------------
 ## One rule per inference type: bootstrap percentile where draws are stored
@@ -123,7 +117,7 @@ vcov.zi_gec <- function(object, ...) {
   ci
 }
 .ci_pick <- function(ci, parm) if (missing(parm) || is.null(parm)) ci else ci[parm, , drop = FALSE]
-.no_inference <- function() stop("No inference available; refit with se != \"none\".", call. = FALSE)
+.no_inference <- function(how = "se = \"bootstrap\"") stop("No inference available; refit with ", how, ".", call. = FALSE)
 
 #' Confidence intervals for every model class
 #'
@@ -154,16 +148,18 @@ NULL
 #' @method confint gec
 #' @export
 confint.gec <- function(object, parm, level = 0.95, ...) {
-  if (is.null(object$boot)) .no_inference()
-  p <- length(object$coefficients); a <- (1 - level) / 2
-  ok <- object$boot[stats::complete.cases(object$boot), , drop = FALSE]
-  if (inherits(object, "gec_fe")) {                       # FE bootstrap: normal approximation
-    se <- apply(ok[, seq_len(p), drop = FALSE], 2, stats::sd)
-    ci <- .ci_wald(object$coefficients, se, level)
+  if (is.null(object$boot)) .no_inference("se = \"bootstrap\"")
+  a <- (1 - level) / 2; fe <- inherits(object, "gec_fe")
+  est <- c(object$coefficients, if (!fe) c(delta = object$delta))
+  ok <- .ud_draws(object, names(est))
+  if (is.null(ok)) {                                      # fewer than two converged replicates
+    .ud_boot_too_few()
+    ci <- .ci_wald(est, rep(NA_real_, length(est)), level)
+  } else if (fe) {                                        # FE bootstrap: normal approximation
+    ci <- .ci_wald(est, apply(ok, 2, stats::sd), level)
   } else {
     ci <- t(apply(ok, 2, stats::quantile, c(a, 1 - a)))
-    dimnames(ci) <- list(c(names(object$coefficients), "delta"),
-                         paste0(format(100 * c(a, 1 - a), trim = TRUE), " %"))
+    colnames(ci) <- paste0(format(100 * c(a, 1 - a), trim = TRUE), " %")
   }
   .ci_pick(ci, parm)
 }
@@ -178,12 +174,12 @@ confint.cpb_fe <- function(object, parm, level = 0.95, ...) {
 #' @method confint count_reg
 #' @export
 confint.count_reg <- function(object, parm, level = 0.95, ...) {
-  if (is.null(object$vcov_full)) .no_inference()
+  if (is.null(object$vcov_full)) .no_inference("se = \"analytic\", \"robust\" or \"cluster\"")
   fam <- .count_fam(object$family); p <- length(object$coefficients)
   est <- object$coefficients; se <- sqrt(pmax(diag(object$vcov_full)[seq_len(p)], 0))
   ci <- .ci_wald(est, se, level)
   if (fam$nshape) {                                        # dispersion: interval on the link scale, mapped back
-    th <- fam$shape_link(object$theta); sth <- sqrt(max(diag(object$vcov_full)[p + 1L], 0))
+    th <- fam$shape_link(object$theta); sth <- sqrt(pmax(diag(object$vcov_full)[p + seq_len(fam$nshape)], 0))
     cth <- fam$shape_inv(.ci_wald(stats::setNames(th, fam$shape_name), sth, level))
     rownames(cth) <- sub("^(log|atanh)\\((.*)\\)$", "\\2", fam$shape_name)
     ci <- rbind(ci, cth)
@@ -194,14 +190,14 @@ confint.count_reg <- function(object, parm, level = 0.95, ...) {
 #' @method confint zi_count
 #' @export
 confint.zi_count <- function(object, parm, level = 0.95, ...) {
-  if (is.null(object$vcov_full)) .no_inference()
+  if (is.null(object$vcov_full)) .no_inference("se = \"analytic\", \"robust\" or \"cluster\"")
   fam <- .count_fam(object$family); pc <- length(object$coefficients); pz <- length(object$zero.coefficients)
   est <- c(stats::setNames(object$coefficients, paste0("count:", names(object$coefficients))),
            stats::setNames(object$zero.coefficients, paste0("zero:", names(object$zero.coefficients))))
   se <- sqrt(pmax(diag(object$vcov_full)[seq_len(pc + pz)], 0))
   ci <- .ci_wald(est, se, level)
   if (fam$nshape) {
-    th <- fam$shape_link(object$theta); sth <- sqrt(max(diag(object$vcov_full)[pc + pz + 1L], 0))
+    th <- fam$shape_link(object$theta); sth <- sqrt(pmax(diag(object$vcov_full)[pc + pz + seq_len(fam$nshape)], 0))
     cth <- fam$shape_inv(.ci_wald(stats::setNames(th, fam$shape_name), sth, level))
     rownames(cth) <- sub("^(log|atanh)\\((.*)\\)$", "\\2", fam$shape_name)
     ci <- rbind(ci, cth)
@@ -209,11 +205,13 @@ confint.zi_count <- function(object, parm, level = 0.95, ...) {
   .ci_pick(ci, parm)
 }
 .hurdle_confint <- function(object, parm, level) {
-  pv <- stats::vcov(object$participation)
-  pc <- stats::coef(object$participation)
-  pci <- .ci_wald(pc, sqrt(diag(pv)), level); rownames(pci) <- paste0("participation:", names(pc))
-  ici <- stats::confint(object$intensity, level = level)
-  rownames(ici) <- paste0("intensity:", rownames(ici))
+  pc <- object$part_beta; pv <- .part_vcov(object)
+  pci <- .ci_wald(pc, sqrt(pmax(diag(pv), 0))[names(pc)], level); rownames(pci) <- paste0("participation:", names(pc))
+  pci[rownames(pci) %in% paste0("participation:", object$part_separation$diverging), ] <- NA   # separated
+  ici <- tryCatch(stats::confint(object$intensity, level = level), error = function(e) NULL)
+  if (is.null(ici))                                        # no intensity inference was requested
+    ici <- matrix(NA_real_, length(object$int_beta), 2L, dimnames = list(names(object$int_beta), NULL))
+  rownames(ici) <- paste0("intensity:", rownames(ici)); colnames(ici) <- colnames(pci)
   .ci_pick(rbind(pci, ici), parm)
 }
 #' @rdname confint.underdisp
@@ -247,12 +245,34 @@ confint.zi_gec <- function(object, parm, level = 0.95, ...) .zi_confint(object, 
 ## --- residuals parity -------------------------------------------------------
 ## Response residuals (y - fitted) for every class that lacked them; two-part
 ## fits use the marginal fitted mean, matching fitted()/predict(type="response").
+## response or Pearson residuals of a single-equation fit, the variance the exact one of the fitted pmf (zero-truncated
+## when the fit is), as dispersion_profile() computes it
+.ud_residuals <- function(object, type) {
+  r <- object$Y - stats::fitted(object)
+  if (type == "pearson") r <- r / sqrt(pmax(.disp_condition(.disp_moments(object))$var, 1e-12))
+  r
+}
+#' Residuals of a fitted model
+#'
+#' Response residuals (`y` minus the fitted mean) for every model class, and for
+#' the single-equation classes Pearson residuals, the response residual divided
+#' by the standard deviation of the fitted distribution (its exact variance;
+#' the conditional one of a zero-truncated fit).
+#' @param object A fitted model from this package.
+#' @param type `"response"` (default) or, for `cpb`, `cpb_fe`, `gec`, `gec_fe`
+#'   and `count_reg`, `"pearson"`.
+#' @param ... Unused.
+#' @return A numeric vector, in the rows of the data.
+#' @name residuals.underdisp
+NULL
+#' @rdname residuals.underdisp
 #' @method residuals gec
 #' @export
-residuals.gec <- function(object, ...) object$Y - object$fitted.values
+residuals.gec <- function(object, type = c("response", "pearson"), ...) .ud_residuals(object, match.arg(type))
+#' @rdname residuals.underdisp
 #' @method residuals cpb_fe
 #' @export
-residuals.cpb_fe <- function(object, ...) object$Y - object$fitted.values
+residuals.cpb_fe <- function(object, type = c("response", "pearson"), ...) .ud_residuals(object, match.arg(type))
 #' @method residuals hurdle_cpb
 #' @export
 residuals.hurdle_cpb <- function(object, ...) object$y - fitted(object)
@@ -279,19 +299,14 @@ residuals.zi_gec <- function(object, ...) object$y - fitted(object)
 ## inference was requested at fit time.
 .sum_block <- function(b, se = NULL) {
   if (is.null(b) || !length(b)) return(NULL)
-  if (is.null(se) || !all(is.finite(se))) {
+  if (is.null(se) || !any(is.finite(se))) {
     out <- cbind(Estimate = unname(b)); rownames(out) <- names(b)
     return(out)
   }
-  zv <- unname(b) / se
+  se <- unname(se); se[!is.finite(se)] <- NA; zv <- unname(b) / se
   out <- cbind(Estimate = unname(b), `Std. Error` = se, `z value` = zv,
                `Pr(>|z|)` = 2 * stats::pnorm(-abs(zv)))
   rownames(out) <- names(b); out
-}
-.glm_block <- function(glmfit) {
-  sm <- summary(glmfit)$coefficients
-  keep <- !grepl("^factor\\(", rownames(sm))
-  sm[keep, , drop = FALSE]
 }
 .ud_summary <- function(object, blocks, disp = NULL, note = NULL)
   structure(list(object = object, blocks = blocks, disp = disp, note = note),
@@ -310,7 +325,7 @@ print.summary.underdisp <- function(x, ...) {
     else print(round(bl, 4))
   }
   if (!is.null(x$disp)) cat("\n", x$disp, "\n", sep = "")
-  if (!is.null(x$note)) cat(x$note, "\n")
+  for (nt in x$note) cat(nt, "\n")
   invisible(x)
 }
 .no_inf_note <- function(has_se)
@@ -365,10 +380,10 @@ summary.hurdle_cpb <- function(object, ...) {
   ise <- if (!is.null(object$intensity$se.beta) && any(is.finite(object$intensity$se.beta)))
            object$intensity$se.beta else NULL
   .ud_summary(object,
-    list("Participation (binary stage)" = .glm_block(object$participation),
+    list("Participation (binary stage)" = .part_block(object),
          "Intensity (zero-truncated CPB)" = .sum_block(object$intensity$coefficients, ise)),
     disp = sprintf("intensity alpha (shape) = %.4f", object$intensity$alpha),
-    note = .no_inf_note(!is.null(ise)))
+    note = c(.no_inf_note(!is.null(ise)), .part_note(object)))
 }
 #' @method summary hurdle_count
 #' @export
@@ -376,10 +391,10 @@ summary.hurdle_count <- function(object, ...) {
   ise <- if (!is.null(object$intensity$se.beta) && any(is.finite(object$intensity$se.beta)))
            object$intensity$se.beta else NULL
   .ud_summary(object,
-    list("Participation (binary stage)" = .glm_block(object$participation),
+    list("Participation (binary stage)" = .part_block(object),
          "Intensity (zero-truncated)" = .sum_block(object$intensity$coefficients, ise)),
     disp = .shape_line(object$family, object$theta),
-    note = .no_inf_note(!is.null(ise)))
+    note = c(.no_inf_note(!is.null(ise)), .part_note(object)))
 }
 #' @method summary hurdle_gec
 #' @export
@@ -387,10 +402,10 @@ summary.hurdle_gec <- function(object, ...) {
   ise <- if (!is.null(object$intensity$se.beta) && any(is.finite(object$intensity$se.beta)))
            object$intensity$se.beta else NULL
   .ud_summary(object,
-    list("Participation (binary stage)" = .glm_block(object$participation),
+    list("Participation (binary stage)" = .part_block(object),
          "Intensity (zero-truncated GEC)" = .sum_block(object$intensity$coefficients, ise)),
     disp = sprintf("intensity dispersion delta = %.4f", object$delta),
-    note = .no_inf_note(!is.null(ise)))
+    note = c(.no_inf_note(!is.null(ise)), .part_note(object)))
 }
 #' @method summary zi_cpb
 #' @export
@@ -399,9 +414,9 @@ summary.zi_cpb <- function(object, ...) {
   zse <- if (!is.null(object$se.zero) && any(is.finite(object$se.zero))) object$se.zero else NULL
   .ud_summary(object,
     list("Count component (CPB)" = .sum_block(object$coefficients, cse),
-         "Zero-inflation (logit)" = .sum_block(object$zero_coef, zse)),
+         "Zero-inflation (logit)" = .sum_mask(.sum_block(object$zero_coef, zse), object$separation$diverging)),
     disp = sprintf("intensity alpha (shape) = %.4f", object$alpha),
-    note = .no_inf_note(!is.null(cse)))
+    note = c(.no_inf_note(!is.null(cse)), .sep_note(object$separation, "zero-inflation"), .zi_zero_note(object)))
 }
 #' @method summary zi_count
 #' @export
@@ -409,9 +424,10 @@ summary.zi_count <- function(object, ...) {
   cse <- if (!is.null(object$vcov)) object$se.beta else NULL
   .ud_summary(object,
     list("Count component" = .sum_block(object$coefficients, cse),
-         "Zero-inflation" = .sum_block(object$zero.coefficients, if (is.null(cse)) NULL else object$se.zero)),
+         "Zero-inflation" = .sum_mask(.sum_block(object$zero.coefficients, if (is.null(cse)) NULL else object$se.zero),
+                                      object$separation$diverging)),
     disp = .shape_line(object$family, object$theta),
-    note = .no_inf_note(!is.null(cse)))
+    note = c(.no_inf_note(!is.null(cse)), .sep_note(object$separation, "zero-inflation")))
 }
 #' @method summary zi_gec
 #' @export
@@ -420,17 +436,16 @@ summary.zi_gec <- function(object, ...) {
   zse <- if (!is.null(object$se.zero) && any(is.finite(object$se.zero))) object$se.zero else NULL
   .ud_summary(object,
     list("Count component (GEC)" = .sum_block(object$coefficients, cse),
-         "Zero-inflation (logit)" = .sum_block(object$zero_coef, zse)),
+         "Zero-inflation (logit)" = .sum_mask(.sum_block(object$zero_coef, zse), object$separation$diverging)),
     disp = sprintf("count dispersion delta = %.4f", object$delta),
-    note = .no_inf_note(!is.null(cse)))
+    note = c(.no_inf_note(!is.null(cse)), .sep_note(object$separation, "zero-inflation")))
 }
 
 ## --- rate ratios and first differences for the GEC and FE-CPB families -----
 ## The GEC/CPB mean is a monotone function of the rate lambda = exp(offset + fe +
 ## x'beta): rate ratios are exp(beta); the first difference is the change in the
-## fitted mean (gec_mean_cpp for GEC, matching predict(type="response"); lambda
-## for the CPB, matching predict.cpb). SEs use the S3 vcov() (bootstrap), not a
-## stored $vcov slot -- gec/gec_fe expose covariance only through the method.
+## fitted mean (gec_mean_cpp for GEC, .cpb_mean for the CPB, each matching
+## predict(type = "response")), with the interval of .qoi_ci() (qoi_unified.R).
 
 .safe_vcov <- function(object) tryCatch({ v <- stats::vcov(object); if (is.matrix(v)) v else NULL },
                                         error = function(e) NULL)
@@ -442,8 +457,7 @@ summary.zi_gec <- function(object, ...) {
 #' @rdname irr.count
 #' @method irr gec
 #' @export
-irr.gec <- function(object, level = 0.95, ...)
-  .irr_from_vcov(object$coefficients, .safe_vcov(object), level)
+irr.gec <- function(object, level = 0.95, ...) .ud_irr_draws(object, object$coefficients, level)
 #' @rdname irr.count
 #' @method irr gec_fe
 #' @export
@@ -455,42 +469,21 @@ irr.gec_fe <- function(object, level = 0.95, ...)
 irr.cpb_fe <- function(object, level = 0.95, ...)
   .irr_from_vcov(object$coefficients, vcov(object), level)
 
-## first difference on the mean scale via a supplied mean function meanfun(eta),
-## eta = base + x'beta (base = 0, or the FE reference for the concentrated
-## models). Returns the unified ud_fd single row.
-.rate_fd <- function(b, xref, base, meanfun, vc, variable, from, to, level) {
-  if (!variable %in% names(b)) stop("'variable' is not a covariate in the model.")
-  .fd_check_terms(variable, names(b))
-  mk <- function(v) { x <- xref; x[variable] <- v; x }
-  mfun <- function(bb, v) meanfun(base + sum(mk(v) * bb))
-  ci <- .fd_delta_ci(function(bb) mfun(bb, to) - mfun(bb, from), b, vc, level)
-  .ud_fd(component = "mean", from = mfun(b, from), to = mfun(b, to),
-         lower = ci[1], upper = ci[2], method = if (is.null(vc)) "none" else "delta")
-}
-.gec_meanfun <- function(object) function(eta) {
-  mu <- exp(eta); m <- gec_mean_cpp(mu, object$delta, object$max.support)
-  if (isTRUE(object$truncated)) {
-    p0 <- gec_pmf_cpp(mu, object$delta, 0L, object$max.support)[, 1]
-    m <- m / pmax(1 - p0, 1e-12)                              # E(Y | Y > 0)
-  }
-  m
-}
-.mean_offset <- function(object) if (is.null(object$offset)) 0 else mean(object$offset)   # offset held at its mean
+## offset held at its mean in every first difference
+.mean_offset <- function(object) if (is.null(object$offset)) 0 else mean(object$offset)
 #' @rdname first_difference.count
 #' @method first_difference gec
 #' @export
-first_difference.gec <- function(object, variable, from, to, level = 0.95, ...) {
+first_difference.gec <- function(object, variable, from, to, level = 0.95, at = NULL, ...) {
   .fd_dots(...)
-  .rate_fd(object$coefficients, colMeans(object$X), .mean_offset(object), .gec_meanfun(object),
-           .safe_vcov(object), variable, from, to, level)
+  .fd_build(.fd_spec(object, variable, from, to, at = at), level)
 }
 #' @rdname first_difference.count
 #' @method first_difference gec_fe
 #' @export
-first_difference.gec_fe <- function(object, variable, from, to, level = 0.95, ...) {
+first_difference.gec_fe <- function(object, variable, from, to, level = 0.95, at = NULL, ...) {
   .fd_dots(...)
-  .rate_fd(object$coefficients, object$xref, object$fe_ref + .mean_offset(object), .gec_meanfun(object),
-           .safe_vcov(object), variable, from, to, level)
+  .fd_build(.fd_spec(object, variable, from, to, at = at), level)
 }
 #' Bootstrap covariance for a fixed-effects CPB fit
 #'
@@ -502,21 +495,15 @@ first_difference.gec_fe <- function(object, variable, from, to, level = 0.95, ..
 #' @method vcov cpb_fe
 #' @export
 vcov.cpb_fe <- function(object, ...) {
-  if (is.null(object$boot)) return(NULL)
-  ok <- object$boot[stats::complete.cases(object$boot), , drop = FALSE]
-  if (nrow(ok) < 2L) return(NULL)
-  v <- stats::cov(ok)
-  dimnames(v) <- list(names(object$coefficients), names(object$coefficients))
-  v
+  ok <- .ud_draws(object, names(object$coefficients))
+  if (is.null(ok)) NULL else stats::cov(ok)
 }
 #' @rdname first_difference.count
 #' @method first_difference cpb_fe
 #' @export
-first_difference.cpb_fe <- function(object, variable, from, to, level = 0.95, ...) {
+first_difference.cpb_fe <- function(object, variable, from, to, level = 0.95, at = NULL, ...) {
   .fd_dots(...)
-  .rate_fd(object$coefficients, object$xref, object$fe_ref + .mean_offset(object),
-           function(eta) .cpb_mean(exp(eta), object$alpha, isTRUE(object$truncated)),   # exact CPB mean
-           vcov(object), variable, from, to, level)
+  .fd_build(.fd_spec(object, variable, from, to, at = at), level)
 }
 
 ## --- rate/odds ratios + first differences for the two-part GEC models ------
@@ -525,63 +512,26 @@ first_difference.cpb_fe <- function(object, variable, from, to, level = 0.95, ..
 #' @method irr hurdle_gec
 #' @export
 irr.hurdle_gec <- function(object, level = 0.95, ...)
-  rbind(.irr_from_vcov(object$int_beta, .safe_vcov(object$intensity), level),
-        .or_rows(object$participation, level))
+  rbind(irr(object$intensity, level = level), .or_rows(object, level))
 #' @rdname irr.count
 #' @method irr zi_gec
 #' @export
-irr.zi_gec <- function(object, level = 0.95, ...)
-  rbind(.ud_irr_wald(object$coefficients,
-                     if (!is.null(object$se.beta) && all(is.finite(object$se.beta)))
-                       object$se.beta else NULL,
-                     level, "count", "IRR", method = "bootstrap (normal)"),
-        .ud_irr_wald(object$zero_coef,
-                     if (!is.null(object$se.zero) && all(is.finite(object$se.zero)))
-                       object$se.zero else NULL,
-                     level, "inflation", "OR", method = "bootstrap (normal)"))
+irr.zi_gec <- function(object, level = 0.95, ...) .zi_irr(object, level)
 #' @rdname first_difference.count
 #' @method first_difference hurdle_gec
 #' @export
 first_difference.hurdle_gec <- function(object, variable, from, to, level = 0.95,
                                         stage = c("both", "participation", "intensity",
-                                                  "zero", "count"), ...) {
+                                                  "zero", "count"), at = NULL, ...) {
   .fd_dots(...); stage <- match.arg(stage)
-  linkinv <- stats::make.link(if (is.null(object$link)) "logit" else object$link)$linkinv
-  inx <- variable %in% names(object$int_xref); inz <- variable %in% names(object$part_xref)
-  if (!inx && !inz) stop("'variable' is in neither the intensity nor the participation equation.")
-  zr0 <- object$part_xref; xr0 <- object$int_xref
-  pfun <- function(g, v) { zr <- zr0
-    if (inz && stage %in% c("both", "participation", "zero")) zr[variable] <- v
-    linkinv(sum(zr * g)) }
-  mfun <- function(b, v) { xr <- xr0
-    if (inx && stage %in% c("both", "intensity", "count")) xr[variable] <- v
-    mu <- exp(sum(xr * b))
-    p0 <- gec_lp0_cpp(c(b, log(object$delta)), matrix(xr, 1), 0L, 0, object$max.support)[1, 2]
-    gec_mean_cpp(mu, object$delta, object$max.support) / (1 - p0) }           # E(Y | Y > 0)
-  bvc <- tryCatch(stats::vcov(object$participation), error = function(e) NULL)
-  .twopart_fd(pfun, mfun, object$part_beta, object$int_beta, bvc, NULL,
-              from, to, level, c("participation", "intensity", "marginal"))
+  .fd_build(.fd_spec(object, variable, from, to, at = at, stage = stage), level)
 }
 #' @rdname first_difference.count
 #' @method first_difference zi_gec
 #' @export
 first_difference.zi_gec <- function(object, variable, from, to, level = 0.95,
                                     stage = c("both", "participation", "intensity",
-                                              "zero", "count"), ...) {
+                                              "zero", "count"), at = NULL, ...) {
   .fd_dots(...); stage <- match.arg(stage)
-  xref <- colMeans(object$X); zref <- colMeans(object$Z)
-  inx <- variable %in% names(xref); inz <- variable %in% names(zref)
-  if (!inx && !inz) stop("'variable' is in neither the count nor the inflation equation.")
-  ## rows: P(structural zero) level, count-component mean, marginal (1-pi)*m
-  pfun <- function(g, v) { zr <- zref
-    if (inz && stage %in% c("both", "participation", "zero")) zr[variable] <- v
-    stats::plogis(sum(zr * g)) }
-  mfun <- function(b, v) { xr <- xref
-    if (inx && stage %in% c("both", "intensity", "count")) xr[variable] <- v
-    gec_mean_cpp(exp(sum(xr * b)), object$delta, object$max.support) }
-  pi_f <- pfun(object$zero_coef, from); pi_t <- pfun(object$zero_coef, to)
-  m_f  <- mfun(object$coefficients, from); m_t <- mfun(object$coefficients, to)
-  .ud_fd(component = c("zero", "count", "marginal"),
-         from  = c(pi_f, m_f, (1 - pi_f) * m_f),
-         to    = c(pi_t, m_t, (1 - pi_t) * m_t))
+  .fd_build(.fd_spec(object, variable, from, to, at = at, stage = stage), level)
 }

@@ -4,7 +4,7 @@
 #' operations, the archetype of a bounded, underdispersed participation count:
 #' most state-years contribute to no operation, and the states that contribute
 #' carry a tight count held in a narrow band by a turning-over roster. About
-#' 42\% of state-years are zero, so it is also a natural example for the
+#' 42% of state-years are zero, so it is also a natural example for the
 #' hurdle-CPB.
 #'
 #' @format A data frame with 4,448 rows and 9 variables:
@@ -34,8 +34,10 @@
 #' table(peacekeeping$contributions == 0)
 #' \donttest{
 #' some <- subset(peacekeeping, iso3 %in% unique(iso3)[1:40])   # forty states keep the example short
+#' ## among these forty states every major power contributes, so majorpower would
+#' ## separate the participation equation (hurdle_cpb() warns when it does)
 #' fit <- hurdle_cpb(contributions ~ lgdppc + milper, data = some,
-#'                   participation = ~ democracy + majorpower, fe = "iso3")
+#'                   participation = ~ democracy + lgdppc, fe = "iso3")
 #' fit
 #' }
 NULL

@@ -13,7 +13,7 @@
 ## simulation, and the QoI methods.
 ##
 ## Natural parameter `mu`: the mean for poisson, negbin, mpcmp (Huang's
-## mean-parameterized COM-Poisson), genpois, gammacount, and doublepois (for the
+## mean-parameterized COM-Poisson), hyperpois, genpois, gammacount, and doublepois (for the
 ## last two the mean is the large-sample rate; the exact mean is returned by
 ## `meanfun`), and the rate lambda for the classical COM-Poisson ("compois").
 ##
@@ -27,8 +27,13 @@
 ##                             (regular event timing), Var/Mean ~ 1/alpha
 ##   doublepois  theta > 1     Efron's (1986) double Poisson with the exact
 ##                             normalizing constant, Var/Mean ~ 1/theta
+##   hyperpois   gamma < 1     hyper-Poisson (Bardwell and Crow 1964), mean-parameterized
+##                             (Saez-Castillo and Conde-Sanchez 2013)
+##   ewp3        beta1, beta2 > 0   three-parameter exponentially weighted Poisson
+##                             (Ridout and Besbeas 2004): two dispersion parameters, one per tail
+##   ewp2        beta > 0      its two-parameter form, beta1 = beta2 = beta
 ## The Poisson is the equidispersed member of every family (nu = 1, lambda = 0,
-## alpha = 1, theta = 1) and the negative binomial is the overdispersed default.
+## alpha = 1, theta = 1, gamma = 1) and the negative binomial is the overdispersed default.
 ## ---------------------------------------------------------------------------
 
 ## log-sum-exp
@@ -58,23 +63,44 @@
   out[a <= 0] <- if (lower) 1 else 0
   out
 }
-.gc_pmf <- function(y, mu, alpha) {
-  x <- alpha * mu
-  lo <- .gc_G(alpha * y, x)
-  ## lower tails cancel near 1; switch to upper tails there
-  d <- ifelse(lo < 0.5, lo - .gc_G(alpha * (y + 1), x),
-              .gc_G(alpha * (y + 1), x, lower = FALSE) - .gc_G(alpha * y, x, lower = FALSE))
-  d[y < 0 | y != floor(y)] <- 0
-  pmax(d, 0)
+## log P(Y = y) = log(G(a1, x) - G(a2, x)), a1 = alpha y, a2 = alpha (y + 1), x = alpha mu, as a difference of
+## log tails: the lower tails where G(a1, x) < 1/2, the upper ones (Q = 1 - G, Q(0, x) = 0) otherwise, so that
+## neither cancels near 1 nor underflows (a zero at a mean of 400 has log probability about -793)
+.gc_logpmf <- function(y, mu, alpha) {
+  n <- max(length(y), length(mu))
+  ## no waiting-time distribution at alpha = 0 (pgamma's shape-0 tails would give every count probability one)
+  if (!is.finite(alpha) || !(alpha > 0)) return(rep(-Inf, n))
+  y <- rep_len(y, n); x <- rep_len(alpha * mu, n)
+  a1 <- alpha * y; a2 <- alpha * (y + 1); out <- rep(-Inf, n)
+  ok <- y >= 0 & y == floor(y)
+  l1 <- rep(0, n); pos <- ok & a1 > 0
+  l1[pos] <- stats::pgamma(x[pos], a1[pos], log.p = TRUE)
+  lo <- ok & l1 < log(0.5)
+  if (any(lo)) {
+    l2 <- stats::pgamma(x[lo], a2[lo], log.p = TRUE)
+    out[lo] <- l1[lo] + log1p(-exp(pmin(l2 - l1[lo], 0)))
+  }
+  up <- ok & !lo
+  if (any(up)) {
+    u2 <- stats::pgamma(x[up], a2[up], lower.tail = FALSE, log.p = TRUE)
+    u1 <- rep(-Inf, sum(up)); p1 <- a1[up] > 0
+    u1[p1] <- stats::pgamma(x[up][p1], a1[up][p1], lower.tail = FALSE, log.p = TRUE)
+    out[up] <- u2 + log1p(-exp(pmin(u1 - u2, 0)))
+  }
+  out[is.nan(out)] <- -Inf                                   # both tails zero (a zero rate): no mass
+  out
 }
+.gc_pmf <- function(y, mu, alpha) exp(.gc_logpmf(y, mu, alpha))
 .gc_kmax <- function(mu, alpha) {
   k <- mu + 12 * sqrt(mu / min(alpha, 1) + 1) + 30
   as.integer(if (!is.finite(k)) 100000 else min(100000, ceiling(k)))
 }
 .gc_moments <- function(mu, alpha) {
   vapply(mu, function(m) {
-    K <- .gc_kmax(m, alpha); k <- 0:K; p <- .gc_pmf(k, m, alpha)
-    s <- sum(p); e1 <- sum(k * p) / s; c(e1, sum(k * k * p) / s - e1 * e1)
+    K <- .gc_kmax(m, alpha); k <- as.numeric(0:K); p <- .gc_pmf(k, m, alpha)
+    s <- sum(p)
+    if (K >= 100000L && !(s > 1 - 1e-8)) return(c(NA_real_, NA_real_))   # the cap cuts the support: refused
+    e1 <- sum(k * p) / s; c(e1, sum((k - e1)^2 * p) / s)
   }, numeric(2))
 }
 
@@ -101,6 +127,8 @@
 ## ---- generalized Poisson (Consul & Jain 1973), constant lambda ----------------
 ## P(y) = th (th + lambda y)^(y-1) exp(-th - lambda y) / y!, th_i = mu_i (1 - lambda),
 ## so E(Y) = mu and Var(Y) = mu / (1 - lambda)^2 on the untruncated support.
+## For 0 <= lambda < 1 the pmf sums to one, so its normalizer is 1 (no sum over
+## a capped support, which understates it where the tail is long).
 ## For lambda < 0 the terms are positive only while th + lambda y > 0, so the
 ## support is finite (y <= K = ceiling(th / -lambda) - 1); the pmf is
 ## renormalized on that support so the likelihood is proper, and the exact mean
@@ -117,10 +145,21 @@
   ## the terms are unimodal in k, so the tail rule applies for every lambda; for
   ## lambda < 0 the finite support end (beyond which the terms are -Inf) caps it
   K <- .grow_support(function(k) .gp_lterm(k, mu, lambda), ceiling(mu + 12 * sqrt(mu / (1 - lambda)^2 + 1) + 30))
-  if (lambda < 0) K <- min(K, as.integer(max(0, ceiling(mu * (1 - lambda) / (-lambda)) - 1)))
+  if (lambda < 0) K <- min(K, max(0, ceiling(mu * (1 - lambda) / (-lambda)) - 1))   # in double: the end can pass the int range
   as.integer(K)
 }
 .gp_logZ <- function(mu, lambda) gp_norm_cpp(as.numeric(mu), lambda, 100000L)[, 1]
+## the log normalizer for the pmf vector: 0 for lambda >= 0, the sum over 0..K
+## below it, NA where the cap truncates that sum (K at 100000 short of the
+## support's end, the last term within 40 log units of the peak): the rules of
+## src/family_norm.cpp
+.gp_lse_capped <- function(mu, lambda, K) {
+  if (lambda >= 0) return(0)
+  lt <- .gp_lterm(0:K, mu, lambda)
+  ends <- lambda < 0 && ceiling(mu * (1 - lambda) / (-lambda)) - 1 <= 100000
+  if (!ends && K >= 100000L && is.finite(lt[K + 1L]) && lt[K + 1L] >= max(lt[is.finite(lt)]) - 40) return(NA_real_)
+  .lse(lt)
+}
 .gp_moments <- function(mu, lambda) {
   if (lambda >= 0) return(rbind(mu, mu / (1 - lambda)^2))
   m <- gp_norm_cpp(as.numeric(mu), lambda, 100000L)
@@ -136,6 +175,74 @@
   v <- cmp_moments_cpp(cmp_loglambda_cpp(mu, nu), nu)[, 2]
   k <- mu + 12 * sqrt(v + 1) + 30
   as.integer(if (!is.finite(k)) 100000 else min(100000, ceiling(k)))
+}
+
+## ---- mean-parameterized hyper-Poisson (Saez-Castillo & Conde-Sanchez 2013) ----
+## P(Y = k) = lambda^k / ((gamma)_k 1F1(1; gamma; lambda)); for every observation
+## the rate solving E[Y | lambda_i, gamma] = mu_i is found in C++
+## (hp_loglambda_cpp, src/hp_mean.cpp), which also sums the normalizer and the
+## exact variance on the support rule of .grow_support.
+## log (gamma)_k as lgamma(k) - lbeta(gamma, k), which does not cancel at large gamma (src/hp_mean.cpp)
+.hp_lterm <- function(k, loglam, gamma) {
+  kk <- pmax(k, 1); k * loglam - ifelse(k > 0, lgamma(kk) - lbeta(gamma, kk), 0)
+}
+.hp_kmax <- function(mu, gamma) {
+  v <- hp_norm_cpp(hp_loglambda_cpp(mu, gamma), gamma)[, 3]
+  k <- mu + 12 * sqrt(v + 1) + 30
+  as.integer(if (!is.finite(k)) 100000 else min(100000, ceiling(k)))
+}
+
+## ---- three-parameter exponentially weighted Poisson (Ridout & Besbeas 2004) ----
+## P(Y = k) = w_k e^{-lambda} lambda^k / k! / W, w_k = exp(-beta1 (lambda - k)) for
+## k <= lambda and exp(-beta2 (k - lambda)) above it; theta = c(beta1, beta2). The
+## natural parameter is the centrality lambda (not the mean). The normalizer and the
+## exact moments are summed in C++ (ewp_norm_cpp, src/ewp_norm.cpp).
+.ewp_lterm <- function(k, loglam, theta) {
+  lam <- exp(loglam)
+  k * loglam - lgamma(k + 1) - lam + ifelse(k <= lam, -theta[1] * (lam - k), -theta[2] * (k - lam))
+}
+.ewp_norm <- function(mu, theta) ewp_norm_cpp(log(mu), theta[1], theta[2])
+.ewp_kmax <- function(mu, theta) {
+  m <- .ewp_norm(mu, theta)
+  k <- m[, 2] + 12 * sqrt(m[, 3] + 1) + 30
+  as.integer(if (!is.finite(k)) 100000 else min(100000, ceiling(k)))
+}
+
+## ---- shape parameters that run to a limit of the family --------------------------
+## The COM-Poisson's nu and the hyper-Poisson's gamma have limits inside the
+## closure of the family (the geometric as nu -> 0 or gamma -> infinity; the
+## Bernoulli as nu -> infinity; 1 + Poisson as gamma -> 0), which data more
+## extreme than the family push the optimizer toward without end: the
+## likelihood keeps rising, ever more slowly, along the log scale, and a search
+## that follows it crawls (a mean-parameterized fit to zero-heavy data took ten
+## minutes and more to creep to nu = 1e-91). The free search therefore holds
+## the shape in [1e-4, 1e4] (.SHAPE_SEARCH), where the likelihood is flat beyond
+## the edge and the search stops; when it ends on the edge, one fit with the
+## shape fixed at the family's limit, 1e-8 or 1e8 (.SHAPE_BOUNDS, within
+## rounding of the limit), re-maximizes the other parameters and is kept if it
+## gains (.shape_limit_candidate). A fit at or past 1e-4 or 1e4 prints a note.
+.SHAPE_BOUNDS <- c(1e-8, 1e8)
+.SHAPE_SEARCH <- log(c(1e-4, 1e4))
+.shape_inv_bounded <- function(s) pmin(pmax(exp(s), .SHAPE_BOUNDS[1]), .SHAPE_BOUNDS[2])
+.shape_bound_note <- function(theta, lower, upper)
+  if (!is.finite(theta)) "" else if (theta <= 1.000001e-4) paste0("  [at ", lower, "]") else
+    if (theta >= 0.999999e4) paste0("  [at ", upper, "]") else ""
+.shape_clamp_search <- function(par, fam, idx) {
+  if (isTRUE(fam$bounded)) par[idx] <- pmin(pmax(par[idx], .SHAPE_SEARCH[1]), .SHAPE_SEARCH[2])
+  par
+}
+## `o` an optim() result over the full parameter vector (the shape at `idx`, on
+## the log scale), `nll` the objective without the search's clamp
+.shape_limit_candidate <- function(o, nll, fam, idx) {
+  if (!isTRUE(fam$bounded) || is.null(o)) return(o)
+  s <- o$par[idx]
+  edge <- if (s <= .SHAPE_SEARCH[1] + 1e-8) log(.SHAPE_BOUNDS[1]) else if (s >= .SHAPE_SEARCH[2] - 1e-8) log(.SHAPE_BOUNDS[2])
+  if (is.null(edge)) return(o)
+  full <- function(r) { p <- o$par; p[-idx] <- r; p[idx] <- edge; p }
+  oc <- tryCatch(stats::optim(o$par[-idx], function(r) nll(full(r)), method = "BFGS",
+                              control = list(maxit = 500, reltol = 1e-12)), error = function(e) NULL)
+  if (is.null(oc) || !(oc$value < o$value)) return(o)
+  list(par = full(oc$par), value = oc$value, counts = oc$counts, convergence = oc$convergence)
 }
 
 ## ---- the family table ---------------------------------------------------------
@@ -162,8 +269,9 @@
     varfun  = function(mu, theta) mu + mu^2 / theta,
     kmax    = function(mu, theta) stats::qnbinom(1 - 1e-10, mu = mu, size = theta)),
   compois = list(tag = "compois", label = "COM-Poisson", nshape = 1L,
-    shape_name = "log(nu)", shape_link = log, shape_inv = exp, shape_starts = c(1, 2),
-    shape_line = function(theta) sprintf("\nnu (COM-Poisson dispersion; > 1 underdispersed): %.4f\n", theta),
+    shape_name = "log(nu)", shape_link = log, shape_inv = .shape_inv_bounded, shape_starts = c(1, 2), bounded = TRUE,
+    shape_line = function(theta) sprintf("\nnu (COM-Poisson dispersion; > 1 underdispersed): %.4g%s\n", theta,
+                                         .shape_bound_note(theta, "the geometric limit", "the Bernoulli limit")),
     null_shape = 1,
     log_mean = function(eta, theta) eta / theta,     # log lambda^(1/nu), the mean scale (see .count_excursion)
     logpmf  = function(y, mu, theta) y * log(mu) - theta * lgamma(y + 1) - .compois_logZ(mu, theta),
@@ -173,8 +281,9 @@
     varfun  = function(mu, theta) cmp_moments_cpp(log(mu), theta)[, 2],
     kmax    = function(mu, theta) .compois_kmax(mu, theta)),
   mpcmp = list(tag = "mpcmp", label = "COM-Poisson (mean-parameterized)", nshape = 1L,
-    shape_name = "log(nu)", shape_link = log, shape_inv = exp, shape_starts = c(1, 2),
-    shape_line = function(theta) sprintf("\nnu (COM-Poisson dispersion; > 1 underdispersed): %.4f\n", theta),
+    shape_name = "log(nu)", shape_link = log, shape_inv = .shape_inv_bounded, shape_starts = c(1, 2), bounded = TRUE,
+    shape_line = function(theta) sprintf("\nnu (COM-Poisson dispersion; > 1 underdispersed): %.4g%s\n", theta,
+                                         .shape_bound_note(theta, "the geometric limit", "the Bernoulli limit")),
     null_shape = 1,
     logpmf  = function(y, mu, theta) { ll <- cmp_loglambda_cpp(mu, theta)
       y * ll - theta * lgamma(y + 1) - cmp_logZ_cpp(ll, theta) },
@@ -191,7 +300,7 @@
     null_shape = 0,
     logpmf  = function(y, mu, theta) .gp_lterm(y, mu, theta) - .gp_logZ(mu, theta),
     pvec    = function(mu, theta, kmax) { K <- .gp_kmax(mu, theta); lt <- .gp_lterm(0:kmax, mu, theta)
-      out <- exp(lt - .lse(.gp_lterm(0:K, mu, theta))); out[0:kmax > K] <- 0; out },
+      out <- exp(lt - .gp_lse_capped(mu, theta, K)); out[0:kmax > K] <- 0; out },
     p0      = function(mu, theta) exp(.gp_lterm(0, mu, theta) - .gp_logZ(mu, theta)),
     meanfun = function(mu, theta) .gp_moments(mu, theta)[1, ],
     varfun  = function(mu, theta) .gp_moments(mu, theta)[2, ],
@@ -201,7 +310,7 @@
     shape_line = function(theta) sprintf("\nalpha (gamma-count dispersion; > 1 underdispersed): %.4f  [Var/Mean ~ %.3f]\n",
                                          theta, 1 / theta),
     null_shape = 1,
-    logpmf  = function(y, mu, theta) log(.gc_pmf(y, mu, theta)),
+    logpmf  = function(y, mu, theta) .gc_logpmf(y, mu, theta),
     pvec    = function(mu, theta, kmax) .gc_pmf(0:kmax, mu, theta),
     p0      = function(mu, theta) .gc_G(theta, theta * mu, lower = FALSE),
     meanfun = function(mu, theta) .gc_moments(mu, theta)[1, ],
@@ -217,12 +326,58 @@
     p0      = function(mu, theta) exp(.dp_lterm(0, mu, theta) - .dp_logZ(mu, theta)),
     meanfun = function(mu, theta) .dp_moments(mu, theta)[1, ],
     varfun  = function(mu, theta) .dp_moments(mu, theta)[2, ],
-    kmax    = function(mu, theta) .dp_kmax(mu, theta))
+    kmax    = function(mu, theta) .dp_kmax(mu, theta)),
+  hyperpois = list(tag = "hyperpois", label = "Hyper-Poisson", nshape = 1L,
+    shape_name = "log(gamma)", shape_link = log, shape_inv = .shape_inv_bounded, shape_starts = c(1, 0.5), bounded = TRUE,
+    shape_line = function(theta) sprintf("\ngamma (hyper-Poisson dispersion; < 1 underdispersed): %.4g%s\n", theta,
+                                         .shape_bound_note(theta, paste("the limit gamma -> 0: 1 + Poisson(mu - 1) for a mean",
+                                                                        "above 1, Bernoulli(mu) below it; the family's",
+                                                                        "least dispersion"),
+                                                           "the geometric limit")),
+    null_shape = 1,
+    logpmf  = function(y, mu, theta) { ll <- hp_loglambda_cpp(mu, theta)
+      .hp_lterm(y, ll, theta) - hp_norm_cpp(ll, theta)[, 1] },
+    pvec    = function(mu, theta, kmax) { ll <- hp_loglambda_cpp(mu, theta)
+      exp(.hp_lterm(0:kmax, ll, theta) - hp_norm_cpp(ll, theta)[, 1]) },
+    p0      = function(mu, theta) exp(-hp_norm_cpp(hp_loglambda_cpp(mu, theta), theta)[, 1]),
+    meanfun = function(mu, theta) mu,
+    varfun  = function(mu, theta) hp_norm_cpp(hp_loglambda_cpp(mu, theta), theta)[, 3],
+    kmax    = function(mu, theta) .hp_kmax(mu, theta)),
+  ## kinked: the log-likelihood is continuous but not differentiable in the parameters (the weight switches at
+  ## y = lambda, the normalizer at every integer lambda), so the covariance uses the expected information
+  ## (.count_expected_info, R/glm_families.R)
+  ewp3 = list(tag = "ewp3", label = "Exponentially weighted Poisson (three-parameter)", nshape = 2L, kinked = TRUE,
+    shape_name = c("beta1", "beta2"), shape_link = identity, shape_inv = identity,
+    shape_starts = list(c(0, 0), c(1, 1)),
+    shape_line = function(theta) sprintf("\nbeta1, beta2 (EWP lower- and upper-tail dispersion; > 0 underdispersed): %.4f, %.4f\n",
+                                         theta[1], theta[2]),
+    null_shape = c(0, 0),
+    logpmf  = function(y, mu, theta) .ewp_lterm(y, log(mu), theta) - .ewp_norm(mu, theta)[, 1],
+    pvec    = function(mu, theta, kmax) exp(.ewp_lterm(0:kmax, log(mu), theta) - .ewp_norm(mu, theta)[, 1]),
+    p0      = function(mu, theta) exp(.ewp_lterm(0, log(mu), theta) - .ewp_norm(mu, theta)[, 1]),
+    meanfun = function(mu, theta) .ewp_norm(mu, theta)[, 2],
+    varfun  = function(mu, theta) .ewp_norm(mu, theta)[, 3],
+    kmax    = function(mu, theta) .ewp_kmax(mu, theta)),
+  ewp2 = list(tag = "ewp2", label = "Exponentially weighted Poisson (two-parameter)", nshape = 1L, kinked = TRUE,
+    shape_name = "beta", shape_link = identity, shape_inv = identity, shape_starts = c(0, 1),
+    shape_line = function(theta) sprintf("\nbeta (EWP dispersion; > 0 underdispersed): %.4f\n", theta),
+    null_shape = 0,
+    logpmf  = function(y, mu, theta) .ewp_lterm(y, log(mu), c(theta, theta)) - .ewp_norm(mu, c(theta, theta))[, 1],
+    pvec    = function(mu, theta, kmax) exp(.ewp_lterm(0:kmax, log(mu), c(theta, theta)) - .ewp_norm(mu, c(theta, theta))[, 1]),
+    p0      = function(mu, theta) exp(.ewp_lterm(0, log(mu), c(theta, theta)) - .ewp_norm(mu, c(theta, theta))[, 1]),
+    meanfun = function(mu, theta) .ewp_norm(mu, c(theta, theta))[, 2],
+    varfun  = function(mu, theta) .ewp_norm(mu, c(theta, theta))[, 3],
+    kmax    = function(mu, theta) .ewp_kmax(mu, c(theta, theta)))
 )
-.count_family_names <- c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount", "doublepois")
+.count_family_names <- c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount", "doublepois", "hyperpois",
+                         "ewp3", "ewp2")
 .count_family_aliases <- c(compois_mean = "mpcmp", double_poisson = "doublepois", gamma_count = "gammacount",
-                           generalized_poisson = "genpois", nb = "negbin", negative_binomial = "negbin")
+                           generalized_poisson = "genpois", hyper_poisson = "hyperpois", ewp = "ewp3", exponentially_weighted_poisson = "ewp3",
+                           nb = "negbin",
+                           negative_binomial = "negbin")
 .count_fam <- function(family) {
+  if (is.function(family)) family <- family()                     # count_reg(family = poisson)
+  if (inherits(family, "family")) family <- family$family          # count_reg(family = poisson())
   if (length(family) > 1L) family <- family[1L]
   if (family %in% names(.count_family_aliases)) family <- .count_family_aliases[[family]]
   family <- match.arg(family, .count_family_names)
@@ -236,10 +391,14 @@
 ## Distribution functions for the added families
 ## ---------------------------------------------------------------------------
 
-## shared d/p/q/r engine from a family object: `mu` recycled against x/q/p
+## shared d/p/q/r engine from a family object: `mu` recycled against x/q/p; the
+## dispersion parameter is a single value (two, beta1 and beta2, for the EWP)
+.fam_shape_msg <- function(fam)
+  if (fam$nshape > 1L) sprintf("the dispersion parameters must be %d single values.", fam$nshape) else
+    "the dispersion parameter must be a single value."
 .fam_d <- function(fam, x, mu, theta, log) {
   if (!length(x) || !length(mu)) return(numeric(0))
-  if (length(theta) != 1L) stop("the dispersion parameter must be a single value.")
+  if (length(theta) != max(1L, fam$nshape)) stop(.fam_shape_msg(fam))
   n <- max(length(x), length(mu)); x <- rep_len(x, n); mu <- rep_len(mu, n)
   ok <- x >= 0 & x == floor(x)
   ld <- rep(-Inf, n)
@@ -248,7 +407,7 @@
 }
 .fam_p <- function(fam, q, mu, theta, lower.tail, log.p) {
   if (!length(q) || !length(mu)) return(numeric(0))
-  if (length(theta) != 1L) stop("the dispersion parameter must be a single value.")
+  if (length(theta) != max(1L, fam$nshape)) stop(.fam_shape_msg(fam))
   n <- max(length(q), length(mu)); q <- rep_len(q, n); mu <- rep_len(mu, n)
   out <- vapply(seq_len(n), function(i) { qi <- floor(q[i]); if (qi < 0) return(0)
     sum(fam$pvec(mu[i], theta, as.integer(qi))) }, numeric(1))
@@ -257,7 +416,7 @@
 }
 .fam_q <- function(fam, p, mu, theta, lower.tail, log.p) {
   if (!length(p) || !length(mu)) return(numeric(0))
-  if (length(theta) != 1L) stop("the dispersion parameter must be a single value.")
+  if (length(theta) != max(1L, fam$nshape)) stop(.fam_shape_msg(fam))
   if (log.p) p <- exp(p); if (!lower.tail) p <- 1 - p
   n <- max(length(p), length(mu)); p <- rep_len(p, n); mu <- rep_len(mu, n)
   vapply(seq_len(n), function(i) {
@@ -266,7 +425,7 @@
 }
 .fam_r <- function(fam, n, mu, theta) {
   if (n == 0) return(numeric(0))
-  if (length(theta) != 1L) stop("the dispersion parameter must be a single value.")
+  if (length(theta) != max(1L, fam$nshape)) stop(.fam_shape_msg(fam))
   mu <- rep_len(mu, n)
   vapply(seq_len(n), function(i) {
     K <- fam$kmax(mu[i], theta); pr <- fam$pvec(mu[i], theta, K); pr[!is.finite(pr) | pr < 0] <- 0
@@ -396,3 +555,93 @@ qgenpois <- function(p, mu, lambda, lower.tail = TRUE, log.p = FALSE)
 #' @rdname genpois-distribution
 #' @export
 rgenpois <- function(n, mu, lambda) .fam_r(.count_families$genpois, n, mu, lambda)
+
+#' Hyper-Poisson distribution functions
+#'
+#' Density, distribution, quantile, and random generation for the hyper-Poisson
+#' distribution of Bardwell and Crow (1964) in the mean parameterization of
+#' Saez-Castillo and Conde-Sanchez (2013): mean `mu` and dispersion `gamma > 0`,
+#' with \eqn{P(Y = y) = \lambda^y / ((\gamma)_y\, {}_1F_1(1; \gamma; \lambda))},
+#' \eqn{(\gamma)_y = \Gamma(\gamma + y)/\Gamma(\gamma)}, and the rate
+#' \eqn{\lambda} the unique solution of \eqn{E(Y) = \mu}. `gamma < 1` gives
+#' underdispersion, `gamma = 1` the Poisson, `gamma > 1` overdispersion. The
+#' underdispersion is bounded: as `gamma -> 0` the distribution tends to
+#' 1 + Poisson(`mu` - 1) for `mu` > 1 and to a Bernoulli(`mu`) below, so the
+#' variance is at least `mu - 1` (`mu >= 1`) or `mu (1 - mu)` (`mu < 1`), and
+#' Var/Mean approaches one as the mean grows (0.5 at a mean of 2, 0.9 at 10).
+#' The normalizer and the moments are exact sums over the support.
+#'
+#' @inheritParams gammacount-distribution
+#' @param mu Mean (scalar or vector, recycled).
+#' @param gamma Dispersion parameter (scalar, positive).
+#' @return `dhyperpois` a density, `phyperpois` a CDF, `qhyperpois` a quantile,
+#'   `rhyperpois` a numeric vector of count draws.
+#' @references Bardwell, G. E. and Crow, E. L. (1964). A two-parameter family of
+#'   hyper-Poisson distributions. \emph{Journal of the American Statistical
+#'   Association}, 59(305), 133-141. \enc{Sáez-Castillo}{Saez-Castillo}, A. J.
+#'   and \enc{Conde-Sánchez}{Conde-Sanchez}, A. (2013). A hyper-Poisson
+#'   regression model for overdispersed and underdispersed count data.
+#'   \emph{Computational Statistics & Data Analysis}, 61, 148-157.
+#' @examples
+#' dhyperpois(0:5, mu = 3, gamma = 0.5)
+#' var(rhyperpois(2000, mu = 3, gamma = 0.5)) / 3
+#' @name hyperpois-distribution
+#' @seealso [count_reg()]
+#' @export
+dhyperpois <- function(x, mu, gamma, log = FALSE) .fam_d(.count_families$hyperpois, x, mu, gamma, log)
+#' @rdname hyperpois-distribution
+#' @export
+phyperpois <- function(q, mu, gamma, lower.tail = TRUE, log.p = FALSE)
+  .fam_p(.count_families$hyperpois, q, mu, gamma, lower.tail, log.p)
+#' @rdname hyperpois-distribution
+#' @export
+qhyperpois <- function(p, mu, gamma, lower.tail = TRUE, log.p = FALSE)
+  .fam_q(.count_families$hyperpois, p, mu, gamma, lower.tail, log.p)
+#' @rdname hyperpois-distribution
+#' @export
+rhyperpois <- function(n, mu, gamma) .fam_r(.count_families$hyperpois, n, mu, gamma)
+
+#' Exponentially weighted Poisson distribution functions
+#'
+#' Density, distribution, quantile, and random generation for the
+#' exponentially weighted Poisson of Ridout and Besbeas (2004), in its
+#' three-parameter form (EWP3) and, with `beta2 = beta1`, its two-parameter form
+#' (EWP2):
+#' a Poisson with centrality `lambda` reweighted by a two-sided exponential in
+#' the distance from it,
+#' \deqn{P(Y = y) \propto w_y e^{-\lambda} \lambda^y / y!, \quad
+#' w_y = e^{-\beta_1 (\lambda - y)} \ (y \le \lambda), \quad
+#' w_y = e^{-\beta_2 (y - \lambda)} \ (y > \lambda).}
+#' `beta1` and `beta2` greater than zero thin the lower and upper tails
+#' (underdispersion), values below zero thicken them, and `beta1 = beta2 = 0` is
+#' the Poisson. `lambda` is not the mean; the normalizer and the exact mean and
+#' variance are sums over the support (no truncation of the normalizing sum at a
+#' fixed count), and the exact mean is what `count_reg(family = "ewp3")` and
+#' `count_reg(family = "ewp2")` report through `predict()` and `fitted()`.
+#'
+#' @inheritParams gammacount-distribution
+#' @param lambda Centrality parameter (scalar or vector, recycled).
+#' @param beta1,beta2 Lower- and upper-tail dispersion parameters (scalars);
+#'   `beta2` defaults to `beta1`, the two-parameter EWP.
+#' @return `dewp` a density, `pewp` a CDF, `qewp` a quantile, `rewp` a numeric
+#'   vector of count draws.
+#' @references Ridout, M. S. and Besbeas, P. (2004). An empirical model for
+#'   underdispersed count data. \emph{Statistical Modelling}, 4(1), 77-89.
+#' @examples
+#' dewp(0:6, lambda = 3, beta1 = 1, beta2 = 1)
+#' var(rewp(2000, lambda = 3, beta1 = 1, beta2 = 1))
+#' @name ewp-distribution
+#' @seealso [count_reg()]
+#' @export
+dewp <- function(x, lambda, beta1, beta2 = beta1, log = FALSE) .fam_d(.count_families$ewp3, x, lambda, c(beta1, beta2), log)
+#' @rdname ewp-distribution
+#' @export
+pewp <- function(q, lambda, beta1, beta2 = beta1, lower.tail = TRUE, log.p = FALSE)
+  .fam_p(.count_families$ewp3, q, lambda, c(beta1, beta2), lower.tail, log.p)
+#' @rdname ewp-distribution
+#' @export
+qewp <- function(p, lambda, beta1, beta2 = beta1, lower.tail = TRUE, log.p = FALSE)
+  .fam_q(.count_families$ewp3, p, lambda, c(beta1, beta2), lower.tail, log.p)
+#' @rdname ewp-distribution
+#' @export
+rewp <- function(n, lambda, beta1, beta2 = beta1) .fam_r(.count_families$ewp3, n, lambda, c(beta1, beta2))

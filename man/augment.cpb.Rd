@@ -4,16 +4,20 @@
 \alias{augment.cpb}
 \title{Augment data with CPB fitted values (broom method)}
 \usage{
-\method{augment}{cpb}(x, ...)
+\method{augment}{cpb}(x, data = NULL, ...)
 }
 \arguments{
 \item{x}{A \code{"cpb"} object.}
+
+\item{data}{Optional: the data frame the model was fit to. Its rows the fit
+used (those without a missing model variable) are returned with the new
+columns appended.}
 
 \item{...}{Unused.}
 }
 \value{
 A data frame with fitted values, response residuals, and the implied
-per-observation ceiling.
+per-observation ceiling (appended to \code{data} when it is given).
 }
 \description{
 Augment data with CPB fitted values (broom method)

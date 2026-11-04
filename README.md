@@ -30,12 +30,14 @@ footing.
   dispersion parameter against the Poisson on the fitted design (fixed effects
   included), with boundary-aware p-values; `dispersion_profile()` plots the
   conditional variance-to-mean ratio against the fitted mean next to the curve
-  each family implies, so the mechanism (a hard ceiling, regular event timing,
-  a soft tail) can be read off the data.
+  each family implies, so the data show which variance function they follow
+  (a hard ceiling's, regular event timing's, a soft tail's); a fitted
+  distribution does not by itself identify the process that generated them.
 - **The hard-ceiling family** — `cpb()` fits King's continuous parameter
-  binomial and its zero-truncated variant, with an interpretable
-  observation-specific bound; `cpb_fe()` absorbs high-dimensional unit fixed
+  binomial and its zero-truncated variant, whose support ends at an
+  observation-specific ceiling set by its variance-mean link; `cpb_fe()` absorbs high-dimensional unit fixed
   effects by a concentrated likelihood that scales to thousands of units.
+  (`support = "floor"` reproduces fits from versions before 0.2.0.)
 - **The free-dispersion family** — `gec()` fits the generalized event count
   (Katz) model, whose single dispersion parameter is estimated freely and spans
   under-, equi-, and overdispersion; `gec_fe()` adds concentrated fixed effects.
@@ -44,7 +46,8 @@ footing.
   processes; `zi_test()` runs the boundary-corrected zero-inflation test.
 - **Matched families** — `count_reg()`, `hurdle_count()`, and `zi_count()` fit
   the Poisson, negative binomial, COM-Poisson (rate- or mean-parameterized),
-  generalized Poisson, gamma-count, and double Poisson through the same
+  generalized Poisson, gamma-count, double Poisson, hyper-Poisson, and
+  exponentially weighted Poisson through the same
   interface, with fixed effects, offsets, frequency weights, and analytic,
   robust, or cluster-robust standard errors, so `compare_models()` and
   `compare_dispersion()` adjudicate the whole family on one footing
@@ -59,8 +62,9 @@ footing.
   `simulate()` methods for every model class, so any fit plugs into `DHARMa`'s
   simulated-residual diagnostics via `DHARMa::createDHARMa()`.
 - **Quantities of interest** — predicted count distributions, the implied
-  ceiling, incidence-rate ratios, and first differences (including the exact
-  extensive/intensive decomposition for two-part models), with bootstrap,
+  ceiling, incidence-rate ratios, first differences (on each margin of a
+  two-part model, extensive and intensive), predictions with confidence
+  intervals, and average marginal effects (`ame()`), with bootstrap,
   delta-method, or profile-likelihood uncertainty; `confint()` for every
   class; parallel bootstraps via `cores =`; `broom`, `modelsummary`, and
   `texreg` support throughout.
@@ -116,8 +120,9 @@ Linear Regression." *Journal of the American Statistical Association* 81(395):
 Huang, Alan. 2017. "Mean-Parametrized Conway–Maxwell–Poisson Regression Models
 for Dispersed Counts." *Statistical Modelling* 17(6): 359–380.
 
-King, Gary. 1989. "Variance Specification in Event Count Models." *American
-Journal of Political Science* 33(3): 762–784.
+King, Gary. 1989. "Variance Specification in Event Count Models: From
+Restrictive Assumptions to a Generalized Estimator." *American Journal of
+Political Science* 33(3): 762–784.
 
 Winkelmann, Rainer. 1995. "Duration Dependence and Dispersion in Count-Data
 Models." *Journal of Business & Economic Statistics* 13(4): 467–474.

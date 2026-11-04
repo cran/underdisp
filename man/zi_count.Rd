@@ -8,7 +8,7 @@ zi_count(
   formula,
   data,
   family = c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount",
-    "doublepois"),
+    "doublepois", "hyperpois", "ewp3", "ewp2"),
   zero = NULL,
   fe = NULL,
   zero_fe = NULL,
@@ -32,7 +32,13 @@ model; defaults to the count right-hand side.}
 \item{fe}{Optional fixed-effects column for the count equation (factor dummies).}
 
 \item{zero_fe}{Optional fixed-effects column for the inflation equation
-(factor dummies); zero-equation fixed effects are opt-in.}
+(factor dummies); zero-equation fixed effects are opt-in. In either
+equation the dummy of a unit with no positive count is not counted in the
+degrees of freedom (see \code{\link[=compare_models]{compare_models()}}, Degrees of freedom). In new
+data (with one column each) such a unit gets the structural-zero
+probability one through \code{zero_fe} and a count mean of zero through \code{fe},
+and a unit whose every count is positive the structural-zero probability
+zero.}
 
 \item{link}{Link for the inflation probability: \code{"logit"} (default),
 \code{"probit"}, or \code{"cloglog"}. Positive inflation coefficients raise the
@@ -59,6 +65,15 @@ mean-parameterized families, on the rate \eqn{\lambda} for \code{"compois"}) and
 the inflation probability a link set by \code{link}. Returned as a \code{"zi_count"}
 object that \code{\link[=compare_models]{compare_models()}} and \code{\link[=score]{score()}} accept.
 }
+\section{Separation}{
+
+The fit checks its zero-inflation equation for separation as \code{\link[=zi_cpb]{zi_cpb()}} does
+(see its Separation section), under its own \code{link}. It warns when the data put
+no useful bound on a covariate coefficient, and stores the check in the
+component \code{separation}. Such a coefficient's standard error is not meaningful
+either.
+}
+
 \examples{
 set.seed(2); n <- 300; x <- rnorm(n); z <- rnorm(n)
 y <- ifelse(rbinom(n, 1, plogis(-0.5 + 0.8 * z)) == 1, 0L, rpois(n, exp(1 + 0.3 * x)))

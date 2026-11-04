@@ -32,3 +32,19 @@ test_that("zi_cpb supports bootstrap SEs", {
   expect_true(is.finite(f$se.beta[["x"]]))
   expect_true(is.finite(f$se.zero[[1]]))
 })
+
+test_that("hurdle_count(se = \"cluster\") without a cluster has NA standard errors, as count_reg's are", {
+  set.seed(5); d <- data.frame(x = rnorm(200)); d$y <- rpois(200, exp(0.5 + 0.3 * d$x)); d$y[rbinom(200, 1, 0.3) == 1] <- 0L
+  expect_warning(h <- hurdle_count(y ~ x, d, family = "poisson", se = "cluster"), "requires a 'cluster'")
+  expect_true(all(is.na(h$part_vcov)))
+  expect_false(any(grepl("clusters)", underdisp:::.part_note(h), fixed = TRUE)))
+})
+
+test_that("a factor cluster's unused levels are not drawn as clusters", {
+  skip_on_cran()
+  set.seed(7); d <- data.frame(g = factor(rep(letters[1:12], each = 10), levels = letters), x = rnorm(120))
+  d$y <- rcpb(120, exp(1 + 0.3 * d$x), 0.5)
+  fit <- function(dd) { set.seed(1)
+    suppressWarnings(suppressMessages(cpb(y ~ x, dd, truncated = FALSE, se = "bootstrap", B = 5, cluster = "g"))) }
+  expect_identical(fit(d)$boot, fit(transform(d, g = droplevels(g)))$boot)
+})

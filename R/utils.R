@@ -43,19 +43,21 @@
 ## optimizer as a meaningless support. Refused by name before any fitting.
 .ud_check_whole <- function(x, name, lower = 1, null_ok = FALSE) {
   if (null_ok && is.null(x)) return(invisible(NULL))
-  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x != floor(x) || x < lower || x > .Machine$integer.max)
-    stop("'", name, "' must be ", if (null_ok) "NULL or ", "a whole number from ", lower, " to ",
-         .Machine$integer.max, ".", call. = FALSE)
+  top <- .Machine$integer.max - 1L                 # the C++ loops run one past it (max.support + 1)
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x != floor(x) || x < lower || x > top)
+    stop("'", name, "' must be ", if (null_ok) "NULL or ", "a whole number from ", lower, " to ", top, ".", call. = FALSE)
   invisible(NULL)
 }
 
-## The support guard's warning ("... reaches max.support ...") muffled and every
-## other warning passed on, for a fit that is a step inside another computation:
-## a start value, a bootstrap or jackknife refit, the nest inside zi_test(). The
-## fit the user asked for reports the guard itself.
+## The support guard's warning ("... reaches max.support ...") and King's CPB's
+## equidispersed-limit warning muffled and every other warning passed on, for a
+## fit that is a step inside another computation: a start value, a bootstrap or
+## jackknife refit, the nest inside zi_test(). The fit the user asked for
+## reports them itself.
 .ud_quiet_guard <- function(expr)
   withCallingHandlers(expr, warning = function(w)
-    if (grepl("reaches max.support", conditionMessage(w), fixed = TRUE)) invokeRestart("muffleWarning"))
+    if (grepl("reaches max.support", conditionMessage(w), fixed = TRUE) ||
+        grepl("equidispersed limit", conditionMessage(w), fixed = TRUE)) invokeRestart("muffleWarning"))
 
 ## Parallel replicate driver for the bootstraps and the parametric-bootstrap
 ## screen threshold. `cores = 1` runs lapply(); `cores > 1` runs a PSOCK cluster
@@ -72,21 +74,22 @@
   cl <- parallel::makeCluster(cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   ## the workers attach the package (a user's fitfun names cpb(), count_reg(), ... unqualified)
+  ## the library the session loaded underdisp from comes first, so that a development build loaded through
+  ## lib.loc is the one the workers run
+  lp <- unique(c(dirname(system.file(package = "underdisp")), .libPaths()))
   parallel::clusterCall(cl, function(lp) { .libPaths(lp); suppressPackageStartupMessages(library("underdisp", character.only = TRUE)); NULL },
-                        .libPaths())
+                        lp)
   seed <- sample.int(.Machine$integer.max, 1L)     # drawn here: the master's RNG advances
   parallel::clusterSetRNGStream(cl, iseed = seed)
   parallel::parLapply(cl, X, FUN)
 }
 
 ## Column scales for the optimizer: each non-constant design column is divided
-## by its standard deviation before optimization and the coefficients mapped
-## back, so the fit (and the numerical Hessians differenced in the scaled
-## coordinates) do not depend on the units the covariates are measured in.
-## Constant columns (the intercept, a column of zeros) keep scale 1.
-## column scales for the optimizer: the (frequency-weighted) standard deviation
-## of each column, so that a weight of w and w copies of the row give the same
-## scaled problem; constant columns and the intercept get scale 1
+## by its (frequency-weighted) standard deviation before optimization and the
+## coefficients mapped back, so the fit (and the numerical Hessians differenced
+## in the scaled coordinates) do not depend on the units the covariates are
+## measured in, and a weight of w and w copies of the row give the same scaled
+## problem. Constant columns (the intercept, a column of zeros) keep scale 1.
 .ud_colscale <- function(X, w = NULL) {
   wv <- if (is.null(w)) rep(1, nrow(X)) else as.numeric(w)
   sw <- sum(wv)
@@ -133,6 +136,17 @@
   invisible(TRUE)
 }
 
+## A gradient-based pass (BFGS) from a multistart's best solution, kept only if it
+## improves on it: Nelder-Mead stops on a flat or collapsed simplex short of the
+## optimum, and BFGS's line search accepts only decreases, so the pass cannot make
+## the fit worse. `fn` may return non-finite values at infeasible points.
+.ud_bfgs_pass <- function(fit, fn, maxit = 500L, reltol = 1e-10) {
+  f <- function(p) { v <- fn(p); if (is.finite(v)) v else 1e10 }
+  op <- tryCatch(stats::optim(fit$par, f, method = "BFGS", control = list(maxit = maxit, reltol = reltol)),
+                 error = function(e) NULL)
+  if (!is.null(op) && op$value < fit$value) op else fit
+}
+
 ## Nelder-Mead restart until the improvement stops paying (a single run can
 ## stall on a collapsed simplex short of the optimum)
 .ud_nm_polish <- function(fit, fn, maxit, reltol, restarts = 3L, tol = 1e-6) {
@@ -177,14 +191,17 @@
 }
 
 ## first differences hold every other model-matrix column at its reference
-## value; a variable that also enters an interaction cannot be moved through one
-## column alone
+## value; a variable that also enters another column (an interaction, I(x^2),
+## log(x), poly(x, 2), a spline basis) cannot be moved through one column alone.
+## The variable is matched as a whole name inside the other column names.
 .fd_check_terms <- function(variable, cols) {
-  inter <- cols[grepl(":", cols, fixed = TRUE)]
-  hit <- inter[vapply(strsplit(inter, ":", fixed = TRUE), function(p) variable %in% p, logical(1))]
+  esc <- gsub("([^[:alnum:]_])", "\\\\\\1", variable, perl = TRUE)      # every other character literal
+  other <- setdiff(unique(cols), variable)
+  hit <- other[grepl(paste0("(^|[^[:alnum:]._])", esc, "([^[:alnum:]._]|$)"), other, perl = TRUE)]
   if (length(hit))
-    stop("'", variable, "' enters the interaction term(s) ", paste(hit, collapse = ", "),
-         "; first_difference() moves one model-matrix column and cannot recompute the product. ",
+    stop("'", variable, "' also enters the term(s) ", paste(hit, collapse = ", "),
+         " (an interaction or a transformation of it); first_difference() moves one model-matrix column and ",
+         "cannot recompute the others. ",
          "Use predict(newdata = ) with the two full covariate profiles instead.", call. = FALSE)
   invisible(TRUE)
 }
@@ -212,7 +229,15 @@
     if (is.null(env$last) || !identical(as.numeric(par), env$last$par)) fn(par)
     if (is.null(env$last) || !identical(as.numeric(par), env$last$par)) return(rep(0, length(par)))
     g <- grad_raw(par, env$last$a, env$last$edge)
-    if (anyNA(g) || !all(is.finite(g))) rep(0, length(par)) else g
+    if (all(is.finite(g))) return(g)
+    ## a non-finite analytic gradient (an edge case of the breakpoint correction): central differences of the
+    ## objective instead, and NA, which stops BFGS for the Nelder-Mead fallback, if those are not finite either
+    h <- 1e-6 * pmax(1, abs(par))
+    g <- vapply(seq_along(par), function(k) {
+      e <- replace(numeric(length(par)), k, h[k]); fp <- fn(par + e); fm <- fn(par - e)
+      if (fp >= 1e9 || fm >= 1e9) NA_real_ else (fp - fm) / (2 * h[k]) }, numeric(1))   # an infeasible side: NA
+    fn(par)                                              # leave the cache at `par`
+    if (all(is.finite(g))) g else rep(NA_real_, length(par))
   }
   run <- function(start) {
     o <- tryCatch(stats::optim(start, fn, gr, method = "BFGS", control = list(maxit = maxit, reltol = reltol)),
@@ -250,11 +275,101 @@
     if (!is.null(attr(stats::terms(f, allowDotAsName = TRUE), "offset")))
       stop("offset() terms in a formula are not supported; supply the exposure on the log scale ",
            "through offset = (a column name or a vector).", call. = FALSE)
-    if (grepl("|", paste(deparse(f), collapse = ""), fixed = TRUE))
+    rhs <- f[[length(f)]]
+    if (is.call(rhs) && identical(rhs[[1L]], as.name("|")))
       stop("a two-part formula 'y ~ x | z' is not supported; give the second equation through ",
            "participation = ~ z (hurdle) or zero = ~ z (zero-inflated).", call. = FALSE)
   }
   invisible(TRUE)
+}
+
+## The offset of new rows (predict(), score(), ceiling_exceedance()). An `offset`
+## given to the method (a column of newdata or a vector) is used as given.
+## Otherwise a fit made with an offset reads it from the same column of
+## newdata, and refuses when it was given as a vector or newdata lacks the
+## column, rather than predicting the new rows at exposure 1. A fit without an
+## offset uses 0. `object` is the fit (or the two-part fit's count component)
+## that stores `offset` (its vector) and `offset_name` (its column, if any).
+.ud_newdata_offset <- function(object, newdata, offset = NULL, n = nrow(newdata)) {
+  if (!is.null(offset))
+    return(rep_len(as.numeric(if (is.character(offset) && length(offset) == 1L) newdata[[offset]] else offset), n))
+  o <- object[["offset"]]
+  if (is.null(o) || !length(o) || all(o == 0)) return(rep(0, n))
+  nm <- object[["offset_name"]]
+  if (!is.null(nm) && nm %in% names(newdata)) return(as.numeric(newdata[[nm]]))
+  stop("The model was fitted with an offset; give the new rows' offset through offset = (a column of newdata ",
+       "or a vector)", if (!is.null(nm)) paste0(", or include the column '", nm, "' in newdata"), ".", call. = FALSE)
+}
+## A count formula with its unit dummies added (fe = NULL: unchanged but for a
+## '.' expanded). The response keeps its own expression (a transformed response
+## stays transformed), the intercept and the environment are kept, and a '.'
+## expands over the data's columns other than the unit identifiers.
+.ud_add_fe_terms <- function(formula, fe, data) {
+  tf <- stats::terms(formula, data = data[, setdiff(names(data), fe), drop = FALSE])
+  if (is.null(fe) && !any(all.names(formula) == ".")) return(formula)
+  stats::reformulate(c(labels(tf), if (!is.null(fe)) paste0("factor(", fe, ")")), response = formula[[2L]],
+                     intercept = attr(tf, "intercept") == 1L, env = environment(formula))
+}
+
+## A fixed-effects fit estimates on rows sorted by unit (each unit's rows
+## contiguous for the concentrated likelihood); its per-row results go back to
+## the data's own row order, so that fitted(), residuals(), predict() and
+## simulate() line up with the rows supplied. `perm[i]` is the data position of
+## sorted row i; `fields` name the per-row vectors and matrices of the fit.
+.ud_unsort <- function(fit, perm, fields) {
+  inv <- order(perm)
+  for (f in fields) {
+    v <- fit[[f]]
+    if (is.matrix(v) && nrow(v) == length(perm)) fit[[f]] <- v[inv, , drop = FALSE]
+    else if (!is.null(v) && !is.matrix(v) && length(v) == length(perm)) fit[[f]] <- v[inv]
+  }
+  fit
+}
+
+## the column name an `offset` argument gives, kept with the fit for new data
+.ud_offset_name <- function(offset) if (is.character(offset) && length(offset) == 1L) offset
+
+## The units whose fixed effect the data identify. A unit with no positive count
+## has its effect at minus infinity (the search stops at a sentinel), and under
+## King's zero-truncated support a unit whose positive counts are all 1 fits
+## every intercept below the one that puts its ceiling at 1 equally well (its
+## truncated support is then {1}). Their values are arbitrary, so they stay out
+## of the reference unit that new rows and first differences use (`fe_ref`).
+## On the floor support the zero-truncated flat set is bounded and is kept.
+.fe_identified <- function(Y, unit, nu, truncated = FALSE, support = "ceiling") {
+  ymax <- vapply(split(Y, factor(unit, levels = seq_len(nu))), function(v) if (length(v)) max(v) else 0, numeric(1))
+  if (!truncated) ymax > 0 else if (.cpb_fl(support)) rep(TRUE, nu) else ymax >= 2
+}
+.fe_mean_identified <- function(fe_hat, ident) if (any(ident)) mean(fe_hat[ident]) else mean(fe_hat)
+## The same rule for fixed effects entered as dummy columns (count_reg and the
+## two-part count models): in a first difference the dummies of each `fe`
+## variable are held at their means over the rows of the identified units, as
+## judged by `ident()` on a unit's responses, so that the diverging
+## coefficients of the others do not move the reference unit.
+.fe_dummy_ref <- function(xref, X, y, fe, ident) {
+  for (v in fe) {
+    cols <- colnames(X)[startsWith(colnames(X), paste0("factor(", v, ")"))]
+    if (!length(cols)) next
+    lev <- as.integer(X[, cols, drop = FALSE] %*% seq_along(cols))        # 0: the reference level
+    ok <- vapply(split(y, lev), ident, logical(1))
+    rows <- lev %in% as.integer(names(ok)[ok])
+    if (any(rows)) xref[cols] <- colMeans(X[rows, cols, drop = FALSE])
+  }
+  xref
+}
+.ident_count  <- function(y) any(y > 0)                       # a count equation
+.ident_trunc  <- function(y) any(y >= 2)                      # a zero-truncated count equation
+.ident_binary <- function(y) any(y > 0) && any(y == 0)        # a participation or inflation equation
+
+## the reference unit effect of a concentrated fixed-effects fit (an object from before 0.2.0: the mean effect)
+.fe_ref <- function(object) if (!is.null(object$fe_ref)) object$fe_ref else mean(object$fe)
+## The unit effect of each new row of a concentrated fixed-effects fit: a unit the fit estimated (named in the
+## `fe_var` column of `newdata`) at its own effect, an unseen unit, or every row when `newdata` has no such column,
+## at the reference unit `ref`
+.fe_newdata_effect <- function(newdata, fe_var, effects, ref) {
+  if (is.null(fe_var) || !fe_var %in% names(newdata)) return(rep(ref, nrow(newdata)))
+  e <- unname(effects[as.character(newdata[[fe_var]])]); e[is.na(e)] <- ref
+  e
 }
 
 ## rows whose unit identifier is missing are dropped, as rows with a missing
@@ -335,3 +450,4 @@
     if (is.factor(newdata[[nm]]) && !is.null(attr(newdata[[nm]], "contrasts"))) attr(newdata[[nm]], "contrasts") <- NULL
   as.numeric(stats::predict(object, newdata = newdata, type = "response"))
 }
+

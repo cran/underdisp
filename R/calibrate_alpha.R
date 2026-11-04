@@ -1,8 +1,12 @@
 ## ---------------------------------------------------------------------------
 ## Opt-in calibration of the interval for the CPB dispersion parameter.
 ##
-## The support of the CPB, 0..floor(lambda_i/(1-alpha)), moves with the
-## parameters, and it does so only through the log-ceiling coefficients (the
+## On King's support, 0..ceiling(lambda_i/(1-alpha)), the probabilities are
+## continuous in the parameters (the support point that enters as a ceiling
+## crosses an integer carries mass that grows from zero), and in simulations
+## the first-order interval covers 0.940 to 0.956. On the floor support,
+## 0..floor(lambda_i/(1-alpha)), the support moves with the parameters in
+## jumps, and it does so only through the log-ceiling coefficients (the
 ## intercept less log(1-alpha), and the slopes). Those are endpoint-type
 ## parameters: the likelihood gains each time an unobserved top support point is
 ## shed and stops at the first count on its ceiling. Given the ceilings, alpha
@@ -10,7 +14,7 @@
 ## toward zero from them, so the signed root of the profile likelihood ratio,
 ##   r(alpha) = sign(alpha-hat - alpha) sqrt(2 (l-hat - l_p(alpha))),
 ## is not centred at zero and the chi-square cut gives an interval that covers
-## about 0.90 to 0.94, its misses on the upper side. The calibration replaces
+## about 0.90 to 0.94, most misses on the upper side. The calibration replaces
 ## the standard normal quantiles of r by its quantiles under the fitted model
 ## (a parametric bootstrap): { alpha : q_lo <= r(alpha) <= q_hi }.
 ## ---------------------------------------------------------------------------
@@ -21,17 +25,27 @@
 #' distribution of the signed root of the profile likelihood ratio for `alpha`.
 #' Once it is stored, [alpha_confint()], [confint.cpb()], [implied_ceiling()]
 #' and `summary()` report the calibrated interval instead of the first-order
-#' one.
+#' one. It is the remedy for floor-support fits (`support = "floor"`). On King's
+#' support, the default, the first-order interval covers close to its level, and
+#' the calibration is an optional refinement.
 #'
 #' @details
 #' The first-order interval cuts the profile log-likelihood `qchisq(level, 1) / 2`
-#' below its maximum on both sides. For the CPB that cut is not calibrated: the
-#' support `0, ..., floor(lambda / (1 - alpha))` moves with the parameters, the
+#' below its maximum on both sides. On King's support that cut is close to
+#' calibrated, because the probabilities change continuously with the parameters.
+#' The simulations from the CPB cover nine designs (n from 200 to 1,000, true
+#' `alpha` 0.3, 0.5 and 0.7). There the first-order 95% interval covers between
+#' 0.940 and 0.956, 0.947 on average, and more of its misses fall above the upper
+#' limit than below the lower one. With `B = 39` replicates, the calibrated
+#' interval covers 0.948 on average in the same simulations. It is about 12%
+#' longer, and its misses are more nearly balanced.
+#'
+#' On the floor support the cut is not calibrated. The support
+#' `0, ..., floor(lambda / (1 - alpha))` moves with the parameters, the
 #' log-ceiling coefficients behave like endpoint parameters, and `alpha`-hat
-#' inherits a bias toward zero from them. In simulations from the CPB the
-#' first-order 95% interval covers between 0.90 and 0.94 across a grid of nine
-#' designs, and nearly all of its misses have the true `alpha` above the upper
-#' limit.
+#' inherits a bias toward zero from them. Across the same nine designs the
+#' first-order 95% interval covers between 0.90 and 0.94, and most of its misses
+#' have the true `alpha` above the upper limit.
 #'
 #' The calibration simulates `B` responses from the fitted model (the fitted
 #' rates, `alpha`-hat, the same truncation and offset), refits each one, and
@@ -40,9 +54,10 @@
 #' `q_hi` the order statistics of the `r*` at ranks `(B + 1)(1 - level)/2` from
 #' each end (the 5th smallest and 5th largest of 199 at the 95% level), so the
 #' upper limit sits `q_lo^2 / 2` and the lower limit `q_hi^2 / 2` below the
-#' maximum of the profile. In the same simulations the calibrated 95% interval
-#' covers 0.92 to 0.96, with its misses balanced between the two sides. The
-#' first-order interval falls short only when the design has many distinct
+#' maximum of the profile. On the floor support, in the same simulations, the
+#' calibrated 95% interval covers 0.92 to 0.96, with its misses balanced between
+#' the two sides. On the floor support, the first-order interval falls short only
+#' when the design has many distinct
 #' covariate patterns (the endpoint effect needs many distinct ceilings): with an
 #' intercept only, or a covariate taking ten or fewer values, it covers at or
 #' above its level, and the calibration, which stays close to the nominal level
@@ -111,10 +126,10 @@ calibrate_alpha.cpb <- function(object, B = 199, cores = 1L, seed = NULL, ...) {
   if (isTRUE(object$clustered))
     message("The calibrated interval for alpha is model-based: it assumes independent observations and does not use 'cluster'.")
   ms <- object$max.support; tr <- isTRUE(object$truncated)
-  ahat <- object$alpha; bhat <- unname(object$coefficients); rate <- object$rate[ex$index]
+  ahat <- object$alpha; bhat <- unname(object$coefficients); rate <- object$rate[ex$index]; sup <- .cpb_support(object)
 
   ## all B responses first, on this process: the refits below use no random numbers
-  ystar <- .sim_draws(seed, function() .sim_from_pmf(n, B, function(i) .sim_pmf_cpb(rate[i], ahat, ms), truncated = tr))
+  ystar <- .sim_draws(seed, function() .sim_from_pmf(n, B, function(i) .sim_pmf_cpb(rate[i], ahat, ms, sup), truncated = tr))
 
   s <- .ud_colscale(X, rep(1, n)); Xs <- sweep(X, 2, s, "/")
   icol <- match("(Intercept)", colnames(X))
@@ -122,17 +137,17 @@ calibrate_alpha.cpb <- function(object, B = 199, cores = 1L, seed = NULL, ...) {
   one <- function(b) {
     ys <- ystar[, b]
     tryCatch(suppressWarnings({
-      g <- .cpb_fit_ms(X, ys, off, ms, tr, astarts, 20000, 1e-8, w = NULL)
+      g <- .cpb_fit_ms(X, ys, off, ms, tr, astarts, 20000, 1e-8, w = NULL, support = sup)
       if (is.null(g) || !is.finite(g$value) || g$value >= 1e9) return(NA_real_)
-      g <- .cpb_alpha_scan(X, ys, off, ms, tr, NULL, g, 20000, 1e-8)
+      if (.cpb_fl(sup)) g <- .cpb_alpha_scan(X, ys, off, ms, tr, NULL, g, 20000, 1e-8)
       bs <- tryCatch({ v <- stats::glm.fit(Xs, ys, offset = off, family = stats::poisson())$coefficients; v[!is.finite(v)] <- 0; v },
                      error = function(e) rep(0, p))
-      lp <- .cpb_prof_at(ahat, bhat * s, Xs, ys, off, ms, tr, NULL, s, icol, ys > 0, b_cold = bs)$ll
+      lp <- .cpb_prof_at(ahat, bhat * s, Xs, ys, off, ms, tr, NULL, s, icol, ys > 0, b_cold = bs, support = sup)$ll
       top <- max(-g$value, lp)                                  # a restricted maximum above the refit's: the refit was short
       sign(stats::plogis(g$par[p + 1L]) - ahat) * sqrt(2 * (top - lp))
     }), error = function(e) NA_real_)
   }
-  r <- unlist(.ud_lapply(seq_len(B), one, cores = cores))
+  r <- unlist(.ud_run_reps(B, one, cores, "calibrate_alpha parametric bootstrap"))
   B_ok <- sum(is.finite(r))
   if (B_ok < 0.8 * B)
     warning("calibrate_alpha: ", B - B_ok, " of ", B, " bootstrap replicates failed to fit; they are counted against both tails.",

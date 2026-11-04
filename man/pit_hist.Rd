@@ -30,9 +30,10 @@ model gives heights near one).
 \description{
 Draws the non-randomized probability integral transform histogram of
 Czado, Gneiting, and Held (2009). A well-calibrated model yields a flat
-histogram at height one (the reference line); a U shape indicates
-under-dispersion in the predictive distribution and a hump indicates
-over-dispersion.
+histogram at height one (the reference line). A hump means the data are
+less dispersed than the fitted model predicts (underdispersed relative to it,
+as a Poisson fit to underdispersed counts shows), and a U shape means they are
+more dispersed.
 }
 \examples{
 set.seed(1)

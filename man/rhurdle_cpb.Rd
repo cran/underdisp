@@ -4,16 +4,19 @@
 \alias{rhurdle_cpb}
 \title{Simulate from the hurdle continuous parameter binomial}
 \usage{
-rhurdle_cpb(n, lambda, alpha, p)
+rhurdle_cpb(n, lambda, alpha, p, support = c("ceiling", "floor"))
 }
 \arguments{
 \item{n}{Number of units.}
 
-\item{lambda}{Intensity mean for participants; scalar or length-\code{n}.}
+\item{lambda}{Intensity rate for participants (the CPB's \code{lambda}); scalar or length-\code{n}.}
 
 \item{alpha}{CPB shape parameter in (0, 1).}
 
 \item{p}{Participation probability; scalar or length-\code{n}.}
+
+\item{support}{The CPB's support, \code{"ceiling"} (King's CPB, the default) or
+\code{"floor"}; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
 An integer vector: 0 for nonparticipants, a zero-truncated CPB draw

@@ -8,23 +8,41 @@
   object,
   newdata = NULL,
   type = c("response", "participation", "intensity"),
+  offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
 \arguments{
 \item{object}{A \code{"hurdle_cpb"} object.}
 
-\item{newdata}{Data frame of covariate profiles (must contain both the
-intensity and participation covariates).}
+\item{newdata}{Data frame of covariate profiles (the intensity and participation
+covariates). A row of a fixed-effects unit the fit has not seen, or every row
+when the \code{fe} or \code{part_fe} column is absent, enters that equation at the
+reference unit, and a unit at a limit (no positive count, or no zero) at
+that limit (see \code{part_fe} in \code{\link[=hurdle_cpb]{hurdle_cpb()}}).}
 
 \item{type}{\code{"response"} for the marginal expected count E(Y) (zeros
 included), \code{"participation"} for P(Y > 0), or \code{"intensity"} for
 E(Y | Y > 0).}
 
+\item{offset}{Optional offset (log scale) of the intensity for the \code{newdata}
+rows: a numeric vector or a column name in \code{newdata}; by default the fit's
+own offset column is read from \code{newdata} (see \code{\link[=predict.cpb]{predict.cpb()}}).}
+
+\item{se.fit, interval, level}{Standard errors (\code{se.fit = TRUE}) and a
+\code{level} confidence interval (\code{interval = "confidence"}) of the predicted
+quantity at the rows of \code{newdata}; see \code{\link[=predict.cpb]{predict.cpb()}}.}
+
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predict from a hurdle-CPB fit

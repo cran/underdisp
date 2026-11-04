@@ -129,7 +129,15 @@ test_that("the dispersion profile recovers a constant ratio for CPB data", {
 test_that("a CPB stopped by the support guard reports the boundary value; a shortfall has no p-value", {
   set.seed(3); xx <- rnorm(300)
   pd <- data.frame(y = rpois(300, exp(1 + 0.3 * xx)), x = xx)
-  f <- suppressWarnings(cpb(y ~ x, pd, truncated = FALSE, se = "none", max.support = 40))
+  ## King's CPB reaches the Poisson limit itself: the boundary value 0, with no guard involved
+  fk <- suppressWarnings(cpb(y ~ x, pd, truncated = FALSE, se = "none", max.support = 40))
+  expect_false(fk$support_binding); expect_gt(fk$alpha, 0.999)
+  dk <- dispersion_test(fk, B = 0)
+  expect_equal(unname(dk$statistic), 0); expect_equal(dk$p.value, 0.5)
+  expect_match(paste(dk$note, collapse = " "), "equidispersed limit")
+  sk <- summary(fk); expect_equal(sk$LR, 0); expect_equal(sk$LR.p, 0.5)
+  ## the floor support's guard
+  f <- suppressWarnings(cpb(y ~ x, pd, truncated = FALSE, se = "none", max.support = 40, support = "floor"))
   expect_true(f$support_binding)
   expect_lt(f$loglik, f$loglik.null)                    # the guard holds the fit below its Poisson limit
   dt <- dispersion_test(f, B = 0)

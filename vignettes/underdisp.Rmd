@@ -48,18 +48,23 @@ ud_screen(y ~ x, data = d, run_cpb = FALSE)
 
 ## Fitting the continuous parameter binomial
 
-`cpb()` fits the CPB, with `truncated = TRUE` for the common case in which
-underdispersion lives among the positive counts of a zero-inflated outcome.
+`cpb()` fits the CPB. These counts are not zero-inflated, so the untruncated
+model is fit to all of them. Its default, `truncated = TRUE`, is for the positive
+counts of a zero-inflated outcome, the intensity of a hurdle model.
 
 ```{r fit}
-fit <- cpb(y ~ x, data = d[d$y > 0, ], se = "none")
+fit <- cpb(y ~ x, data = d, truncated = FALSE, se = "none")
 summary(fit)
 ```
 
 The dispersion parameter `alpha` summarizes the compression, and each observation
-carries an implied ceiling `lambda / (1 - alpha)`. The CPB is a binomial with a
-non-integer number of trials, renormalized over its finite support, so its mean
-is not exactly the rate `exp(x'b)`: `fitted()` and
+carries an implied ceiling `lambda / (1 - alpha)`, the CPB's continuous number of
+trials; no count above its integer ceiling has positive probability. This is
+King's (1989) CPB, which is the generalized event count of `gec()` at
+`delta = alpha` (`support = "floor"` gives the package's definition before
+version 0.2.0). The CPB is a binomial with a non-integer number of trials,
+renormalized over its finite support, so its mean is not exactly the rate
+`exp(x'b)`: `fitted()` and
 `predict(type = "response")` report the exact mean of the fitted distribution
 (the conditional mean given `Y >= 1` for a zero-truncated fit), and
 `predict(type = "rate")` the rate.
@@ -67,7 +72,8 @@ is not exactly the rate `exp(x'b)`: `fitted()` and
 ## Quantities of interest
 
 Predicted means, the implied ceiling, and first differences are available for
-user-specified covariate profiles.
+user-specified covariate profiles, and `ame()` averages a marginal effect over
+the rows of a data set.
 
 ```{r qoi}
 predict(fit, newdata = data.frame(x = c(-1, 0, 1)), type = "response")
@@ -97,14 +103,20 @@ dispersion_test(count_reg(y ~ x, data = d, family = "poisson"),
 
 ## Bootstrap inference
 
-Because the CPB's support depends on its parameters, Hessian-based standard
-errors are unreliable; coefficient inference uses a cold-multistart pairs
-bootstrap (validated to nominal coverage in the companion paper), and the
+Hessian-based standard errors are unreliable for the CPB: an observation whose
+ceiling lies just above an integer carries information about its rate that grows
+without bound as the ceiling approaches the integer (see `?cpb`). Coefficient
+inference uses a cold-multistart pairs bootstrap. In simulations from King's CPB at n = 300, its 95% interval for a
+slope covers 0.91 at `alpha` = 0.3, 0.95 at 0.5 and 0.94 at 0.7 (0.95 on the
+floor support). At `alpha` = 0.3, neither a parametric bootstrap (0.918) nor
+999 replicates (0.924) brings it to the nominal level. The
 dispersion parameter carries a profile-likelihood interval. That interval is
-first-order by default: the estimate of `alpha` is biased toward zero (the
-log-ceiling coefficients behave like endpoint parameters), so it covers about
-0.90 to 0.94 in simulations, with its misses on the upper side.
-`calibrate_alpha()` is the opt-in remedy: it stores the parametric-bootstrap
+first-order by default. On King's support it covers close to its level in
+simulations (0.940 to 0.956). On the floor support it does not: the estimate of
+`alpha` is biased toward zero there (the log-ceiling coefficients behave like
+endpoint parameters), so it covers about 0.90 to 0.94, with most misses on the
+upper side. `calibrate_alpha()` is the opt-in remedy for floor-support fits and
+an optional refinement on King's. It stores the parametric-bootstrap
 distribution of the signed root of the profile likelihood ratio in the fit
 (`fit <- calibrate_alpha(fit, B = 199, cores = 4, seed = 1)`, about a third of
 a fit per replicate), after which `alpha_confint()`, `confint()`,
@@ -112,11 +124,41 @@ a fit per replicate), after which `alpha_confint()`, `confint()`,
 intervals are model-based and assume independent observations. `cores =` runs
 the replicates on a socket cluster seeded from the session.
 
+The bootstrap draws also carry the quantities of interest. `first_difference()`,
+`predict(interval = "confidence")` and `ame()` compute the quantity at every
+draw, the dispersion parameter included, and report its percentile interval;
+a fit without draws uses the delta method where its family has a covariance.
+
 ```{r boot}
-fit_b <- cpb(y ~ x, data = d[d$y > 0, ], se = "bootstrap", B = 49)   # a small B keeps the vignette quick
+fit_b <- cpb(y ~ x, data = d, truncated = FALSE, se = "bootstrap", B = 200)
 summary(fit_b)
 irr(fit_b)             # rate ratios with percentile intervals
 confint(fit_b)         # coefficients (percentile) and alpha (first-order profile likelihood)
+first_difference(fit_b, "x", from = -1, to = 1)
+predict(fit_b, newdata = data.frame(x = c(-1, 1)), interval = "confidence")
+ame(fit_b, "x", newdata = d)   # the average marginal effect over the sample
+```
+
+## Mean effects and the robust Poisson
+
+For the conditional mean alone, the Poisson with robust standard errors is the
+benchmark: its coefficients are consistent whenever the mean is
+`exp(x'b)`, whatever the distribution (Gourieroux, Monfort and Trognon 1984;
+Wooldridge 1999), and its robust intervals hold under underdispersion as under
+overdispersion. The CPB's mean effects are consistent only when the CPB is the
+data's process. On underdispersed counts from another process (binomial counts
+with varying trials, a COM-Poisson) its average marginal effects can be off by
+several percent at any sample size, while the robust Poisson's stay on target;
+when the CPB is the process, its effects are consistent, and the Poisson's are a
+little off, since the CPB's mean is not exactly log-linear. What the CPB adds
+is the distribution: predicted probabilities, the ceiling, the share of zeros,
+intervals for a count. The two average marginal effects side by side are a
+check worth reporting.
+
+```{r pml}
+pml <- count_reg(y ~ x, data = d, family = "poisson", se = "robust")
+ame(pml, "x", newdata = d)     # robust Poisson
+ame(fit_b, "x", newdata = d)   # CPB
 ```
 
 ## The free-dispersion GEC
@@ -164,10 +206,13 @@ dispersion_test(fe_fit, cores = 2)   # parametric-bootstrap p-value, 199 replica
 
 `compare_dispersion()` fits the Poisson, negative binomial, the native
 soft-tail COM-Poisson, the free-dispersion GEC, and the hard-ceiling CPB, and
-reports a fit comparison plus the CPB's ceiling-exceedance share.
+reports a fit comparison. The CPB's bound itself is tested on held-out counts:
+in sample every feasible fit respects it, since its likelihood forbids
+exceedance. `ceiling_exceedance()` counts the held-out observations above it.
 
 ```{r family}
 compare_dispersion(y ~ x, data = d)$table
+ceiling_exceedance(cpb(y ~ x, data = d[1:300, ], truncated = FALSE, se = "none"), d[301:400, ])
 ```
 
 ## The wider underdispersed family
@@ -178,8 +223,12 @@ COM-Poisson (`"compois"`, rate-parameterized) and Huang's mean-parameterized
 COM-Poisson (`"mpcmp"`, a soft tail), the Consul--Jain generalized Poisson
 (`"genpois"`, constant variance-to-mean ratio, finite support when
 underdispersed), Winkelmann's gamma-count (`"gammacount"`, events with more
-regular timing than a Poisson process), and Efron's double Poisson
-(`"doublepois"`). Each inherits fixed effects, zero-truncation, hurdle and
+regular timing than a Poisson process), Efron's double Poisson
+(`"doublepois"`), the hyper-Poisson of Bardwell and Crow in the mean
+parameterization of Sáez-Castillo and Conde-Sánchez (`"hyperpois"`, with
+constant dispersion), and Ridout and Besbeas's exponentially weighted Poisson
+(`"ewp3"`, one weight per tail, and its one-weight form `"ewp2"`). Each
+inherits fixed effects, zero-truncation, hurdle and
 zero-inflated forms, offsets, frequency weights, robust and cluster-robust
 standard errors, and every method in the package, so `compare_models()` places
 them next to the CPB on one footing.
@@ -211,7 +260,7 @@ dispersion_profile(CPB = fits$CPB, NB = fits$NB, GammaCount = fits$GammaCount,
 
 The correlated-random-effects device (`mundlak()`) and matching
 `d`/`p`/`q`/`r` functions (`dcpb()`, `dgec()`, `dcompois()`, `dgammacount()`,
-`dgenpois()`, `ddoublepois()`) round out the family.
+`dgenpois()`, `ddoublepois()`, `dhyperpois()`, `dewp()`) round out the family.
 
 ## Excess zeros: hurdle and zero-inflated models
 
@@ -230,8 +279,10 @@ ud_screen(contributions ~ democracy + lgdppc + lpop + milper + factor(iso3),
 
 That is the case for a two-part model with an underdispersed intensity.
 `hurdle_cpb()` joins a participation logit to a zero-truncated CPB, and
-`zi_cpb()` fits the structural-zero mixture; `zi_test()` and `compare_models()`
-adjudicate between them.
+`zi_cpb()` fits the structural-zero mixture. The two are not nested, so
+`compare_models()` adjudicates between them, on information criteria and
+proper scores (`cv_score()` holds them out); `zi_test()` tests a mixture with
+intercept-only inflation against its non-inflated nest.
 
 ```{r hurdle}
 z <- rnorm(n)
@@ -243,13 +294,17 @@ zi <- zi_cpb(y ~ x, data = dh, zero = ~ z)
 compare_models(hurdle = h, mixture = zi)
 ```
 
-The hurdle's `first_difference()` separates the extensive and intensive
-margins exactly -- which channel a covariate moves, not just the blended
-marginal effect. One practical note: because the hurdle factorizes, its
-participation stage is an ordinary logistic regression; if a dummy-heavy
-participation equation separates, fit that stage with a dedicated
-bias-reduction package (`logistf`, `brglm2`) alongside this package's
-zero-truncated intensity.
+The hurdle's `first_difference()` reports the change on each margin, the
+participation probability and the conditional mean, beside the marginal mean
+-- which channel a covariate moves, not just the blended marginal effect. One practical note: because the hurdle factorizes, its
+participation stage is an ordinary logistic regression; the hurdles check it
+for separation and warn, and if a dummy-heavy participation equation
+separates, fit that stage with a dedicated bias-reduction package (`logistf`,
+`brglm2`) alongside this package's zero-truncated intensity. The mixture's zero
+equation can separate even where the hurdle's logit does not, since the count
+component's probability of a zero covers the zeros on the wrong side.
+`zi_cpb()`, `zi_gec()` and `zi_count()` check for this after the fit and warn
+(see the Separation section of `?zi_cpb`).
 
 ## Weights
 
@@ -270,15 +325,15 @@ parameters bias of order 1/T: with few observations per unit, `alpha` is biased
 *downward* (the panel looks more underdispersed than it is).
 `bias_correct = "jackknife"` removes the leading bias term by the split-panel
 jackknife of Dhaene and Jochmans (2015), refitting on each unit's temporal
-halves.
+halves; `time` names the column that orders each unit's rows.
 
 ```{r jackknife}
 short <- do.call(rbind, lapply(1:16, function(i) {
   xx <- rnorm(8); NN <- pmax(round(exp(1.0 + rnorm(1, 0, 0.4) + 0.3 * xx) / 0.5), 1)
-  data.frame(unit = i, x = xx, y = rbinom(8, NN, 0.5))
+  data.frame(unit = i, t = 1:8, x = xx, y = rbinom(8, NN, 0.5))
 }))
 ml <- cpb_fe(y ~ x, data = short, fe = "unit")
-jk <- cpb_fe(y ~ x, data = short, fe = "unit", bias_correct = "jackknife")
+jk <- cpb_fe(y ~ x, data = short, fe = "unit", bias_correct = "jackknife", time = "t")
 c(ml = ml$alpha, jackknife = jk$alpha)   # truth is 0.5; ML is biased downward
 ```
 
@@ -289,8 +344,8 @@ that is exchangeable under any time pattern -- and if the temporal halves
 disagree beyond that placebo noise, the correction is *refused* with a warning
 naming the failed assumption and the maximum-likelihood fit is returned. On a
 trending or regime-changing panel, the refusal is the correct answer. The gate
-is deliberately powered over sized: in calibration it refuses about 7% of
-genuinely homogeneous panels (you keep the ordinary ML fit) while catching 98%
+is deliberately powered over sized: in calibration it refuses 9% to 13% of
+genuinely homogeneous panels (you keep the ordinary ML fit) while catching 98.5%
 of dispersion regime changes and all smooth unmodeled trends.
 
 ## Simulated-residual diagnostics with DHARMa

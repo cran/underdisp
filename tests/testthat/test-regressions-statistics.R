@@ -1,4 +1,5 @@
-## Regression tests for the round-1 referee findings (statistics and numerics).
+## Regression tests: the CPB's exact moments, scoring, the offsets and weights of every class, the term
+## guards of first_difference(), and other statistical behaviour that once went wrong.
 
 testthat::skip_on_cran()   # validation battery: runs in the package's CI (NOT_CRAN = true), not on CRAN
 
@@ -6,9 +7,9 @@ set.seed(31); n <- 400; x <- rnorm(n); z <- rnorm(n)
 d0 <- data.frame(y = rcpb(n, exp(1.2 + 0.5 * x), 0.5), x = x, z = z, u = factor(sample(1:15, n, TRUE)))
 
 test_that("the CPB reports the exact mean of its fitted distribution, not the rate", {
-  ## a binomial with non-integer N renormalized over 0..floor(N) has mean != lambda (WSK 1995)
+  ## a binomial with non-integer N renormalized over its support has mean != lambda (WSK 1995)
   f <- cpb(y ~ x, d0, truncated = FALSE, se = "none")
-  hand <- vapply(f$rate, function(l) { p <- underdisp:::.cpb_pmf_core(l, f$alpha); sum((seq_along(p) - 1) * p) }, numeric(1))
+  hand <- vapply(f$rate, function(l) { p <- underdisp:::.cpb_pmf_core(l, f$alpha, f$support); sum((seq_along(p) - 1) * p) }, numeric(1))
   expect_equal(fitted(f), hand, tolerance = 1e-10)
   expect_equal(mean(fitted(f)), mean(d0$y), tolerance = 0.03)
   expect_equal(predict(f, newdata = d0, type = "rate"), f$rate, tolerance = 1e-10)
@@ -17,10 +18,10 @@ test_that("the CPB reports the exact mean of its fitted distribution, not the ra
   dp <- d0[d0$y > 0, ]; ft <- cpb(y ~ x, dp, truncated = TRUE, se = "none")
   expect_equal(mean(fitted(ft)), mean(dp$y), tolerance = 0.03)
   fd <- first_difference(f, "x", -1, 1)
-  expect_equal(fd$from, underdisp:::.cpb_mean(exp(sum(c(1, -1) * coef(f))), f$alpha, FALSE), tolerance = 1e-8)
+  expect_equal(fd$from, underdisp:::.cpb_mean(exp(sum(c(1, -1) * coef(f))), f$alpha, FALSE, f$support), tolerance = 1e-8)
   ## the hurdle intensity is E(Y | Y > 0)
   h <- hurdle_cpb(y ~ x, d0, participation = ~ z, se = "none")
-  expect_equal(fitted(h), h$p_full * underdisp:::.cpb_ztmean(h$lambda_full, h$intensity$alpha), tolerance = 1e-10)
+  expect_equal(fitted(h), h$p_full * underdisp:::.cpb_ztmean(h$lambda_full, h$intensity$alpha, h$support), tolerance = 1e-10)
   expect_equal(unname(predict(h, newdata = d0)), unname(fitted(h)), tolerance = 1e-8)
   ## zero-truncated count_reg reports E(Y | Y >= 1)
   ct <- count_reg(y ~ x, dp, family = "poisson", truncated = TRUE)
@@ -57,19 +58,20 @@ test_that("the concentrated fixed-effects likelihood attains the full-dummy maxi
   expect_gte(fe$loglik, dm$loglik - 0.02)
   ## brute-force check of one unit's intercept at the fitted (beta, alpha)
   u <- 2; rows <- d$unit == u; b <- coef(fe)[["x"]]; a <- fe$alpha
-  ll_u <- function(int) sum(log(underdisp:::.cpb_prob_at(exp(int + b * d$x[rows]), a, d$y[rows], FALSE, fe$max.support)))
+  ll_u <- function(int) sum(log(underdisp:::.cpb_prob_at(exp(int + b * d$x[rows]), a, d$y[rows], FALSE, fe$max.support, fe$support)))
   grid <- seq(fe$fe[u] - 2, fe$fe[u] + 2, by = 0.002)
   expect_gte(ll_u(fe$fe[u]), max(vapply(grid, ll_u, numeric(1))) - 0.02)
 })
 
 test_that("max.support that binds is reported and a guard-stopped LR takes its boundary value", {
+  ## the guard binds on the floor support only: King's support approaches the Poisson as alpha -> 1
   set.seed(801); m <- 300; xx <- rnorm(m)
   big <- data.frame(y = rpois(m, exp(4.6 + 0.2 * xx)), x = xx)      # mean ~ 100, equidispersed
-  expect_warning(f <- cpb(y ~ x, big, truncated = FALSE, se = "none", max.support = 500), "max.support")
+  expect_warning(f <- cpb(y ~ x, big, truncated = FALSE, se = "none", max.support = 500, support = "floor"), "max.support")
   expect_true(f$support_binding)
-  expect_error(cpb(y ~ x, big, truncated = FALSE, se = "none", max.support = 100), "no feasible fit")
+  expect_error(cpb(y ~ x, big, truncated = FALSE, se = "none", max.support = 100, support = "floor"), "no feasible fit")
   over <- data.frame(y = rnbinom(m, mu = exp(1.2 + 0.5 * xx), size = 1), x = xx)
-  so <- summary(suppressWarnings(cpb(y ~ x, over, truncated = FALSE, se = "none")))
+  so <- summary(suppressWarnings(cpb(y ~ x, over, truncated = FALSE, se = "none", support = "floor")))
   if (isTRUE(so$support_binding)) { expect_gte(so$LR, 0); expect_lte(so$LR.p, 0.5) } else if (so$LR < 0) expect_true(is.na(so$LR.p)) else expect_true(is.finite(so$LR.p))
   expect_output(print(so), "Poisson")
 })
@@ -77,9 +79,12 @@ test_that("max.support that binds is reported and a guard-stopped LR takes its b
 test_that("integer ceilings are feasible in the C++ and R code paths alike", {
   X <- matrix(1, 1, 1); off <- 0
   b <- log(5)                                                   # exp(log(5))/0.5 = 9.999999999999998
-  v <- underdisp:::cpb_nll_cpp(c(b, qlogis(0.5)), X, 10L, off, 500L, FALSE)
-  expect_true(v < 1e9)
-  expect_equal(exp(-v), dcpb(10, 5, 0.5), tolerance = 1e-8)
+  for (fl in c(TRUE, FALSE)) {                                  # the floor support, then King's
+    v <- underdisp:::cpb_nll_cpp(c(b, qlogis(0.5)), X, 10L, off, 500L, FALSE, fl)
+    expect_true(v < 1e9)
+    expect_equal(exp(-v), dcpb(10, 5, 0.5, support = if (fl) "floor" else "ceiling"), tolerance = 1e-8)
+    expect_equal(underdisp:::cpb_nll_cpp(c(b, qlogis(0.5)), X, 11L, off, 500L, FALSE, fl), 1e10)
+  }
 })
 
 test_that("the pmf consumers carry the fit's offset: in-sample log score equals -logLik/n", {
@@ -98,7 +103,7 @@ test_that("the Katz recursion reaches far-tail counts of an unbounded member", {
   expect_equal(dgec(20, 1, 1), dpois(20, 1), tolerance = 1e-10)
   expect_equal(dgec(25, 2, 1.5), dnbinom(25, mu = 2, size = 2 / 0.5), tolerance = 1e-10)
   X <- matrix(1, 5, 1); Y <- c(0L, 1L, 1L, 2L, 30L)
-  expect_lt(underdisp:::gec_nll_cpp(c(log(1.5), 0), X, Y, rep(0, 5), 500L), 1e9)
+  expect_lt(underdisp:::gec_wnll_cpp(c(log(1.5), 0), X, Y, rep(1, 5), rep(0, 5), 500L), 1e9)
 })
 
 test_that("column scaling and restarts make the fits invariant to units and contrasts", {
@@ -135,5 +140,5 @@ test_that("first differences hold an offset at its mean", {
   E <- runif(n, 0.5, 3); dE <- data.frame(y = rcpb(n, exp(0.9 + 0.4 * x) * E, 0.5), x = x, logE = log(E))
   f <- cpb(y ~ x, dE, truncated = FALSE, se = "none", offset = "logE")
   fd <- first_difference(f, "x", 0, 0)
-  expect_equal(fd$from, underdisp:::.cpb_mean(exp(mean(log(E)) + coef(f)[[1]]), f$alpha, FALSE), tolerance = 1e-8)
+  expect_equal(fd$from, underdisp:::.cpb_mean(exp(mean(log(E)) + coef(f)[[1]]), f$alpha, FALSE, f$support), tolerance = 1e-8)
 })

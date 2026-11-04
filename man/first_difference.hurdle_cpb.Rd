@@ -15,6 +15,7 @@
   data = NULL,
   stage = c("both", "participation", "intensity", "zero", "count"),
   cores = 1L,
+  at = NULL,
   ...
 )
 
@@ -28,6 +29,7 @@
   data = NULL,
   stage = c("both", "participation", "intensity", "zero", "count"),
   cores = 1L,
+  at = NULL,
   ...
 )
 }
@@ -38,13 +40,17 @@
 
 \item{from, to}{The two values to contrast.}
 
-\item{B}{Bootstrap replicates for percentile intervals; \code{0} (default) returns
-point estimates only. For \code{zi_cpb} the bootstrap is slow (each replicate
-refits the mixture).}
+\item{B}{Refit-bootstrap replicates for percentile intervals; \code{0} (default)
+uses the fit's own inference instead (see Details). For \code{zi_cpb} the refit
+bootstrap is slow (each replicate refits the mixture).}
 
 \item{level}{Confidence level.}
 
-\item{data}{The original data frame; required when \code{B > 0}.}
+\item{data}{The original data frame; required when \code{B > 0}. Each replicate
+refits the model with the fit's own settings (fixed effects, link, offset,
+weights, support, and the like), resampling whole fixed-effects units (or
+the fit's clusters) when it has them; an offset or weights given to the fit
+as a vector must then be a column of \code{data} instead.}
 
 \item{stage}{Which equation(s) the covariate moves in: \code{"both"} (default),
 the binary stage only (\code{"participation"}/\code{"zero"}), or the count stage
@@ -52,6 +58,9 @@ only (\code{"intensity"}/\code{"count"}), holding the covariate at its reference
 the other equation. All three component rows are always returned.}
 
 \item{cores}{Worker processes for the bootstrap refits (default 1); see \code{\link[=cpb]{cpb()}}.}
+
+\item{at}{Optional named numeric vector fixing other model-matrix columns at
+given values instead of their means (see \code{\link[=first_difference]{first_difference()}}).}
 
 \item{...}{Unused; unknown arguments error.}
 }
@@ -61,8 +70,14 @@ columns \code{component}, \code{from}, \code{to}, \code{diff}, \code{lower}, \co
 one row per margin level.
 }
 \description{
-The effect of moving \code{variable} \code{from} one value \code{to} another, decomposed into
-the change in the participation (extensive) margin, the intensity (intensive)
-margin, and the marginal expected count, holding other covariates at their
-means. This is the quantity the single-equation defaults cannot separate.
+The effect of moving \code{variable} \code{from} one value \code{to} another on the
+participation (extensive) margin, the intensity (intensive) margin, and the
+marginal expected count, holding other covariates at their means (or at the
+values \code{at} gives them). The two margins are reported side by side; their
+changes do not add up to the marginal change (see \link{first_difference.count}).
+With \code{B = 0} the intervals follow the package's one rule (see
+\code{\link[=first_difference]{first_difference()}}): the stored bootstrap draws of a \code{zi_cpb} fit, and for
+a hurdle the delta method over its two margins' covariances (the
+participation model's, and the intensity's stored bootstrap draws). \code{B > 0}
+refits the whole model on resampled data instead.
 }

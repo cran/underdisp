@@ -10,6 +10,9 @@
   type = c("response", "rate", "link", "ceiling", "prob"),
   at = NULL,
   offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
@@ -23,20 +26,38 @@ fitted data are used.}
 for a zero-truncated fit the conditional mean E(Y | Y >= 1)), \code{"rate"}
 (the CPB rate parameter lambda = exp(x'b), which equals the mean only when
 lambda/(1-alpha) is an integer), \code{"link"} (the linear predictor, log
-lambda), \code{"ceiling"} (the implied ceiling lambda/(1-alpha)), or \code{"prob"}
-(the probability that \code{Y} equals \code{at}).}
+lambda), \code{"ceiling"} (the implied ceiling lambda/(1-alpha), the CPB's
+continuous number of trials; the largest count with positive probability is
+its ceiling on King's support and its floor on the floor support), or
+\code{"prob"} (the probability that \code{Y} equals \code{at}).}
 
 \item{at}{For \code{type = "prob"}, the count value(s) \code{y} whose probability is
 returned (length 1, or one per row of the prediction data).}
 
-\item{offset}{Optional offset (log scale) for the \code{newdata} branch: a numeric
-vector or a column name in \code{newdata}. For \code{newdata = NULL} the fit's own
-offset is used.}
+\item{offset}{Optional offset (log scale) for the \code{newdata} rows: a numeric
+vector or a column name in \code{newdata}. By default a fit made with an offset
+column reads that column from \code{newdata}, and one made with an offset vector
+requires this argument. For \code{newdata = NULL} the fit's own offset is used.}
+
+\item{se.fit, interval, level}{The uncertainty of the predicted quantity at
+the rows of \code{newdata}: \code{se.fit = TRUE} adds standard errors, and
+\code{interval = "confidence"} a \code{level} confidence interval. They follow the
+rule of \code{\link[=first_difference]{first_difference()}}: the fit's stored bootstrap draws (a
+percentile interval, and the draws' standard deviation), otherwise the
+delta method over the fit's covariance, otherwise none. They need
+\code{newdata}. A row at a fixed-effects unit's own effect, or at its own
+zero-equation dummy, has none, since the draws do not carry that
+parameter; a row of a unit the fit has not seen, or \code{newdata} without the
+unit column, enters at the reference unit, which they carry. \code{\link[=ame]{ame()}} gives
+average marginal effects.}
 
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predictions from a CPB fit

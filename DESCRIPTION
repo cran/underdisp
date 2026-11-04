@@ -1,7 +1,7 @@
 Package: underdisp
 Type: Package
 Title: Diagnostics and Models for Underdispersed Count Data
-Version: 0.1.2
+Version: 0.2.0
 Authors@R: person("Benjamin E.", "Bagozzi", email = "bagozzib@udel.edu",
     role = c("aut", "cre"), comment = c(ORCID = "0000-0002-6233-6453"))
 Description: Tools for detecting and modeling underdispersion in count data
@@ -14,9 +14,10 @@ Description: Tools for detecting and modeling underdispersion in count data
     regressions with zero-truncated, hurdle, and zero-inflated forms and
     high-dimensional fixed effects with a split-panel jackknife bias correction;
     matched Poisson, negative binomial, COM-Poisson (rate- and mean-parameterized),
-    generalized Poisson, gamma-count, and double Poisson regressions through the
-    same interface, with frequency weights, offsets, and analytic, robust, and
-    cluster-robust standard errors; bootstrap and profile-likelihood inference;
+    generalized Poisson, gamma-count, double Poisson, hyper-Poisson, and
+    exponentially weighted Poisson regressions through the same interface, with
+    frequency weights, offsets, and analytic, robust, and cluster-robust
+    standard errors; bootstrap and profile-likelihood inference;
     proper scoring rules, rootograms, PIT histograms, and simulation methods; and
     quantities of interest including predicted distributions, the implied ceiling,
     rate ratios, and first differences with an extensive/intensive decomposition.
@@ -29,7 +30,7 @@ Imports: Rcpp, stats, MASS, VGAM, graphics, methods, numDeriv, parallel
 LinkingTo: Rcpp
 Suggests: sandwich, pscl, DHARMa, testthat (>= 3.0.0), knitr,
         rmarkdown, broom, modelsummary, texreg, gamlss.dist, rmutil,
-        glmmTMB, COMPoissonReg, Ecdat, wooldridge
+        glmmTMB, DGLMExtPois, ewp
 VignetteBuilder: knitr
 RoxygenNote: 7.3.3
 URL: https://CRAN.R-project.org/package=underdisp,
@@ -38,9 +39,9 @@ URL: https://CRAN.R-project.org/package=underdisp,
 BugReports: https://github.com/bagozzib/underdisp/issues
 Config/testthat/edition: 3
 NeedsCompilation: yes
-Packaged: 2026-09-29 11:43:07 UTC; bagoz
+Packaged: 2026-11-04 15:54:03 UTC; bagoz
 Author: Benjamin E. Bagozzi [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-6233-6453>)
 Maintainer: Benjamin E. Bagozzi <bagozzib@udel.edu>
 Repository: CRAN
-Date/Publication: 2026-09-30 21:20:08 UTC
+Date/Publication: 2026-11-04 18:40:02 UTC

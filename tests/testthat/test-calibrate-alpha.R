@@ -23,7 +23,7 @@ test_that("calibrate_alpha() stores the bootstrap signed roots and the accessors
   expect_output(print(summary(cal)), "calibrated profile")
   expect_output(print(summary(fit)), "first-order profile")
   ic <- implied_ceiling(cal, newdata = data.frame(x = 0), level = 0.90)
-  expect_true(ic$lower <= ic$ceiling && ic$ceiling <= ic$upper)
+  expect_true(ic$ceiling_at_alpha_lower <= ic$ceiling && ic$ceiling <= ic$ceiling_at_alpha_upper)
 })
 
 test_that("the calibration does not depend on the number of worker processes", {

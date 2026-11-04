@@ -12,11 +12,11 @@
 \alias{first_difference.zi_count}
 \title{First differences for the matched count families}
 \usage{
-\method{first_difference}{gec}(object, variable, from, to, level = 0.95, ...)
+\method{first_difference}{gec}(object, variable, from, to, level = 0.95, at = NULL, ...)
 
-\method{first_difference}{gec_fe}(object, variable, from, to, level = 0.95, ...)
+\method{first_difference}{gec_fe}(object, variable, from, to, level = 0.95, at = NULL, ...)
 
-\method{first_difference}{cpb_fe}(object, variable, from, to, level = 0.95, ...)
+\method{first_difference}{cpb_fe}(object, variable, from, to, level = 0.95, at = NULL, ...)
 
 \method{first_difference}{hurdle_gec}(
   object,
@@ -25,6 +25,7 @@
   to,
   level = 0.95,
   stage = c("both", "participation", "intensity", "zero", "count"),
+  at = NULL,
   ...
 )
 
@@ -35,10 +36,11 @@
   to,
   level = 0.95,
   stage = c("both", "participation", "intensity", "zero", "count"),
+  at = NULL,
   ...
 )
 
-\method{first_difference}{count_reg}(object, variable, from, to, level = 0.95, ...)
+\method{first_difference}{count_reg}(object, variable, from, to, level = 0.95, at = NULL, ...)
 
 \method{first_difference}{hurdle_count}(
   object,
@@ -47,6 +49,7 @@
   to,
   level = 0.95,
   stage = c("both", "participation", "intensity", "zero", "count"),
+  at = NULL,
   ...
 )
 
@@ -57,6 +60,7 @@
   to,
   level = 0.95,
   stage = c("both", "participation", "intensity", "zero", "count"),
+  at = NULL,
   ...
 )
 }
@@ -68,8 +72,11 @@
 
 \item{from, to}{The two values of \code{variable}.}
 
-\item{level}{Confidence level for the delta-method intervals (all methods on
-this page that can compute one).}
+\item{level}{Confidence level of the intervals.}
+
+\item{at}{Optional named numeric vector fixing other model-matrix columns at
+given values instead of their means (see \code{\link[=first_difference]{first_difference()}}); in a
+two-part model a column of both equations is fixed in both.}
 
 \item{...}{Unused; unknown arguments error.}
 
@@ -92,8 +99,17 @@ records the uncertainty source per row (\code{"delta"}, a bootstrap label, or
 }
 \description{
 The discrete-change effect on the expected count E(Y) as \code{variable} moves from
-\code{from} to \code{to}, holding the other covariates at their sample means. For
-\code{count_reg} this is a single number with a delta-method interval; for the
-two-part models it is decomposed exactly into extensive (participation /
-non-structural-zero) and intensive (count) channels that sum to the total.
+\code{from} to \code{to}, holding the other covariates at their sample means (or at
+the values \code{at} gives them). The interval follows the package's one rule (see
+\code{\link[=first_difference]{first_difference()}}): percentile intervals from the fit's stored bootstrap
+draws for the GEC, fixed-effects CPB and zero-inflated GEC fits, the delta
+method over the full covariance, the dispersion parameter included, for the
+matched count families and the hurdles' margins. For
+\code{count_reg} this is a single number; for the
+two-part models it is reported on each margin: the binary stage's
+probability (participation, or the structural-zero probability), the count
+stage's mean, and the marginal mean, their product, each at \code{from} and \code{to}.
+The first two are different quantities and their changes do not add up to
+the marginal change, which is
+\eqn{\Delta(pm) = \Delta p\, m_0 + p_0 \Delta m + \Delta p\, \Delta m}.
 }

@@ -54,7 +54,8 @@
 #' The Poisson is nested in every family at one value of the dispersion
 #' parameter: `alpha = 1` (CPB), `delta = 1` (GEC), `nu = 1` (both COM-Poisson
 #' parameterizations), `lambda = 0` (generalized Poisson), `alpha = 1`
-#' (gamma-count), `theta = 1` (double Poisson), and `1/theta = 0` (negative
+#' (gamma-count), `theta = 1` (double Poisson), `gamma = 1` (hyper-Poisson),
+#' `beta1 = beta2 = 0` or `beta = 0` (the EWP), and `1/theta = 0` (negative
 #' binomial). When that value is interior to the parameter space the
 #' likelihood-ratio statistic is asymptotically \eqn{\chi^2_1} under the null; a
 #' directional alternative (`"under"` or `"over"`) uses the signed root
@@ -72,24 +73,34 @@
 #' \eqn{-[(y - \lambda)^2 - y] / (2\lambda)}; the zero-truncated model reaches
 #' the same mixture through its efficient score. Because the Poisson is the CPB's
 #' limit as `alpha` approaches 1, the statistic cannot be negative in principle;
-#' when the `max.support` guard stops `alpha` short of that limit and the fitted
-#' log-likelihood lands just below the Poisson's, the statistic takes its
-#' boundary value 0. Any other negative statistic means the optimizer fell
-#' short, and no p-value is reported.
+#' when the fit reaches that limit (King's CPB, whose likelihood approaches the
+#' Poisson's continuously) or the floor support's `max.support` guard stops
+#' `alpha` short of it, and the fitted log-likelihood lands just below the
+#' Poisson's, the statistic takes its boundary value 0. Any other negative
+#' statistic means the optimizer fell short, and no p-value is reported.
 #'
 #' **Calibration.** Where the Poisson value is on the boundary of the family's
 #' parameter space (the CPB, the negative binomial), or the fit has unit fixed
 #' effects, the p-value is by default a parametric bootstrap with 199
-#' replicates. The one-sided boundary statistic is skewed toward rejection in
-#' finite samples, and unit intercepts bias the dispersion estimate toward
-#' underdispersion by an amount of order 1/T; in both cases the asymptotic
-#' distribution over-rejects. Where the Poisson value is interior, the
+#' replicates, which does not depend on the direction in which the asymptotic
+#' reference errs. For the CPB it errs toward rejection: in the package's
+#' simulations from the Poisson the asymptotic boundary mixture rejected 7 to
+#' 10 percent of 5% tests with 60 to 200 observations, and 54 to 92 percent
+#' with unit fixed effects, whose intercepts bias the dispersion estimate toward
+#' underdispersion by an amount of order 1/T. The same rule bootstraps the
+#' negative binomial's boundary test.
+#' Where the Poisson value is interior, the
 #' asymptotic distribution is used unless the estimated mean parameters shift
 #' it too far: to first order they move the signed root toward
 #' underdispersion by \eqn{p/\sqrt{2n}} standard deviations for \eqn{p} mean
 #' parameters on \eqn{n} observations (the weight total), the bias Dean and
 #' Lawless (1989) remove from the score test, and the bootstrap takes over when
-#' that shift pushes the first-order size of a 5\% test above 6\%. The bootstrap
+#' that shift pushes the first-order size of a 5% test above 6%. The shift is
+#' derived for one tested parameter, so the EWP3's joint test of its two tails
+#' takes the bootstrap by default: in the package's simulations from the
+#' Poisson its asymptotic \eqn{\chi^2_2} rejected 6.4 to 7.5 percent of 5%
+#' tests with one or two mean parameters on 200 to 500 observations, and 8.0
+#' percent with ten on 400. The bootstrap
 #' simulates responses from the Poisson (zero-truncated Poisson) fitted to the
 #' same design, offset, weights, and unit effects, refits both models to each,
 #' and reports the share of simulated statistics at least as extreme as the
@@ -119,7 +130,7 @@
 #'   value, the two log-likelihoods, and the alternative; for `method = "lr"`
 #'   also `calibration` (`"asymptotic"` or `"parametric bootstrap"`), `B` and
 #'   `B_ok` (replicates requested and completed), `boot` (the simulated
-#'   statistics), `first_order_size` (the asymptotic 5\% test's first-order
+#'   statistics), `first_order_size` (the asymptotic 5% test's first-order
 #'   size), `asymptotic_ok` (whether the calibration rule admits the asymptotic
 #'   distribution), and `note` where a statistic or p-value needs one.
 #' @references Andrews, D. W. K. (2001). Testing when a parameter is on the
@@ -181,11 +192,14 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
       return(list(label = fam$label, par = "1/theta", est = 1 / object$theta, null = 0, boundary = TRUE,
                   forced = "over", under = function(est) FALSE))
     nul <- fam$null_shape
+    if (fam$nshape > 1L)                                   # the EWP3: a joint test of both tail parameters
+      return(list(label = fam$label, par = fam$shape_name, est = object$theta, null = nul, boundary = FALSE,
+                  forced = NULL, under = function(est) NA, df = fam$nshape))
     return(list(label = fam$label, par = sub("^(log|atanh)\\((.*)\\)$", "\\2", fam$shape_name),
                 est = object$theta, null = nul, boundary = FALSE, forced = NULL,
                 under = switch(object$family,
-                  compois = , mpcmp = , gammacount = , doublepois = function(est) est > nul,
-                  genpois = function(est) est < nul)))
+                  compois = , mpcmp = , gammacount = , doublepois = , ewp2 = function(est) est > nul,
+                  genpois = , hyperpois = function(est) est < nul)))
   }
   stop("dispersion_test() takes a cpb, cpb_fe, gec, gec_fe, or count_reg fit.")
 }
@@ -206,20 +220,27 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
 ## that the support guard produced (the fit stopped short of the alpha -> 1
 ## limit) is the boundary value 0; any other negative value is an optimizer
 ## shortfall and carries no p-value
-.disp_negative_lr <- function(LR, binding, label) {
+.disp_negative_lr <- function(LR, binding, label, limit = FALSE) {
   if (is.na(LR) || LR >= -1e-8) return(list(LR = if (is.na(LR)) NA_real_ else max(LR, 0), shortfall = FALSE, note = NULL))
   if (binding)
     return(list(LR = 0, shortfall = FALSE,
                 note = paste0("the max.support guard stopped alpha short of its Poisson limit, where the fitted ",
                               "log-likelihood falls just below the Poisson's, so the statistic takes its boundary value 0")))
+  ## King's CPB approaches the Poisson continuously as alpha -> 1 and the logit
+  ## parameterization stops just short of it: a fit at that limit sits a
+  ## hair below the Poisson (a larger gap is a shortfall in the slopes)
+  if (limit && LR >= -1e-3)
+    return(list(LR = 0, shortfall = FALSE,
+                note = paste0("the fit reached the CPB's equidispersed limit (alpha -> 1), whose log-likelihood ",
+                              "approaches the Poisson's from below, so the statistic takes its boundary value 0")))
   list(LR = LR, shortfall = TRUE,
        note = paste0("the fitted ", label, " log-likelihood lies below its Poisson nest (LR < 0): the optimizer ",
                      "fell short, and no p-value is reported"))
 }
 
 ## the CPB statistic with its asymptotic boundary-mixture p-value (summary.cpb)
-.disp_boundary_lr <- function(LR, binding) {
-  v <- .disp_negative_lr(LR, binding, "CPB")
+.disp_boundary_lr <- function(LR, binding, limit = FALSE) {
+  v <- .disp_negative_lr(LR, binding, "CPB", limit)
   p <- if (is.na(v$LR) || v$shortfall) NA_real_ else 0.5 * stats::pchisq(v$LR, 1, lower.tail = FALSE)
   list(LR = v$LR, p = p, note = v$note, shortfall = v$shortfall)
 }
@@ -245,10 +266,15 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
   trunc <- isTRUE(object$truncated)
   s <- .ud_colscale(X, w); Xs <- sweep(X, 2, s, "/")
   sy <- as.numeric(rowsum(w * Y, u)[, 1])
+  ## a unit with no positive count sits 30 log units below its own largest linear predictor, as in the fits
+  ## (an absolute -30 put the rates of a unit with an uncentred covariate anywhere); the floor support's cpb_fe()
+  ## keeps the absolute sentinel of versions before 0.2.0, as its fit does
+  rel <- !(inherits(object, "cpb_fe") && .cpb_fl(.cpb_support(object)))
+  ug <- factor(u, levels = sort(unique(u)))                    # the units in rowsum()'s order
   conc <- function(b) {
     eta <- off + as.numeric(Xs %*% b)
     a <- log(pmax(sy, 1e-300)) - log(as.numeric(rowsum(w * exp(eta), u)[, 1]))
-    a[sy <= 0] <- -30
+    a[sy <= 0] <- if (rel) (-30 - as.numeric(tapply(eta, ug, max)))[sy <= 0] else -30
     if (!trunc) { lam <- exp(a[u] + eta); return(list(ll = sum(w * stats::dpois(Y, lam, log = TRUE)), lam = lam)) }
     ## a unit whose counts are all one has its zero-truncated Poisson supremum
     ## at lambda -> 0 (log-likelihood 0): it is held at the floor and skipped
@@ -321,13 +347,13 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
   off <- .disp_offset(object); w <- object$weights
   if (inherits(object, "count_reg")) {
     ft <- .count_fit(object$X, y, .count_fam(object$family), isTRUE(object$truncated), offset = off, w = w)
-    return(c(loglik = ft$loglik, est = if (object$family == "negbin") 1 / ft$theta else ft$theta))
+    return(c(loglik = ft$loglik, est = (if (object$family == "negbin") 1 / ft$theta else ft$theta)[1L]))   # the EWP's two-sided test uses no direction
   }
   conc <- inherits(object, c("cpb_fe", "gec_fe"))
   fr <- .disp_frame(object$X, y, if (conc) object$unit)
   if (inherits(object, "cpb_fe")) {
     f <- cpb_fe(fr$formula, fr$data, fe = ".unit", truncated = isTRUE(object$truncated), se = "none",
-                offset = off, weights = w, max.support = object$max.support)
+                offset = off, weights = w, max.support = object$max.support, support = .cpb_support(object))
     return(c(loglik = f$loglik, est = f$alpha))
   }
   if (inherits(object, "gec_fe")) {
@@ -337,7 +363,7 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
   }
   if (inherits(object, "cpb")) {
     f <- cpb(fr$formula, fr$data, truncated = isTRUE(object$truncated), se = "none",
-             offset = off, weights = w, max.support = object$max.support)
+             offset = off, weights = w, max.support = object$max.support, support = .cpb_support(object))
     return(c(loglik = f$loglik, est = f$alpha))
   }
   f <- gec(fr$formula, fr$data, truncated = isTRUE(object$truncated), se = "none",
@@ -354,6 +380,13 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
 
 .disp_lr <- function(object, alternative, alt_missing, B, cores) {
   fam <- .disp_family(object)
+  df <- if (is.null(fam$df)) 1L else fam$df
+  if (df > 1L) {                                           # several dispersion parameters: no direction to test
+    if (!alt_missing && alternative != "two.sided")
+      stop("the ", fam$label, " has ", df, " dispersion parameters, so the test is the joint two-sided test of ",
+           "all of them against the Poisson; use alternative = \"two.sided\".")
+    alternative <- "two.sided"
+  }
   if (fam$boundary) {
     if (!alt_missing && alternative != fam$forced)
       warning("the Poisson value is on the boundary of this family's parameter space; the test is one-sided (alternative = \"",
@@ -362,10 +395,16 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
   } else if (alt_missing) alternative <- "two.sided"
   des <- .disp_design(object)
   size1 <- .disp_first_order_size(des$p, des$n, alternative)
-  asym_ok <- !fam$boundary && !des$fe && size1 <= .disp_size_tol
+  ## the first-order size correction is derived for one tested parameter; with
+  ## several the parametric bootstrap calibrates by default (for the EWP3's two
+  ## tails the asymptotic chi-square(2) rejected 6.4% to 7.5% of 5% tests with one
+  ## or two mean parameters on 200 to 500 observations, and 8.0% with ten on 400,
+  ## in the package's simulations)
+  asym_ok <- !fam$boundary && !des$fe && size1 <= .disp_size_tol && df == 1L
   ll1 <- object$loglik
   null0 <- .disp_null_fit(object); ll0 <- null0$loglik
-  neg <- .disp_negative_lr(2 * (ll1 - ll0), fam$boundary && isTRUE(object$support_binding), fam$label)
+  neg <- .disp_negative_lr(2 * (ll1 - ll0), fam$boundary && isTRUE(object$support_binding), fam$label,
+                           limit = fam$boundary && .cpb_at_limit(object))
   LR <- neg$LR; note <- neg$note
   nboot <- if (neg$shortfall) 0L else if (is.null(B)) (if (asym_ok) 0L else 199L) else as.integer(B)
   stat <- if (neg$shortfall) NA_real_ else .disp_signed(LR, fam$est, fam, alternative)
@@ -387,7 +426,7 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
         else .disp_signed(max(2 * (a1[["loglik"]] - n0$loglik), 0), a1[["est"]], fam, alternative)
       }), error = function(e) NA_real_)
     }
-    boot <- unlist(.ud_lapply(seq_len(nboot), one, cores = cores))
+    boot <- unlist(.ud_run_reps(nboot, one, cores, "dispersion_test parametric bootstrap"))
     ok <- is.finite(boot); B_ok <- sum(ok)
     if (B_ok < 0.8 * nboot)
       warning("dispersion_test: ", nboot - B_ok, " of ", nboot, " bootstrap replicates failed to fit; the p-value uses the ",
@@ -403,7 +442,7 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
   } else if (!neg$shortfall) {
     p <- if (fam$boundary) 0.5 * stats::pchisq(LR, 1, lower.tail = FALSE)
          else switch(alternative,
-           two.sided = stats::pchisq(LR, 1, lower.tail = FALSE),
+           two.sided = stats::pchisq(LR, df, lower.tail = FALSE),
            under = stats::pnorm(stat, lower.tail = FALSE),
            over  = stats::pnorm(stat))
     if (!asym_ok)
@@ -414,7 +453,7 @@ dispersion_test <- function(object, alternative = c("two.sided", "under", "over"
                             "size at the 5%% level is %.3f, and %s"),
                      as.integer(des$p), format(des$n), size1, remedy))
   }
-  structure(list(statistic = c(LR = LR), parameter = c(df = 1), p.value = p, note = note,
+  structure(list(statistic = c(LR = LR), parameter = c(df = df), p.value = p, note = note,
                  estimate = stats::setNames(fam$est, fam$par), null.value = stats::setNames(fam$null, fam$par),
                  alternative = switch(alternative, two.sided = "two.sided", under = "underdispersion", over = "overdispersion"),
                  method = paste0("Likelihood-ratio test of equidispersion (", fam$label, " vs Poisson",
@@ -461,6 +500,10 @@ print.dispersion_test <- function(x, digits = 4, ...) {
   cat(sprintf("%s = %.4f", names(x$statistic), x$statistic),
       if (!is.null(x$loglik)) sprintf("  (logLik: fitted family = %.2f, Poisson = %.2f)", x$loglik[1], x$loglik[2]),
       sprintf(",  p-value = %s\n", format.pval(x$p.value, digits = digits)), sep = "")
+  if (identical(x$calibration, "parametric bootstrap") && isTRUE(x$B_ok > 0) &&
+      isTRUE(abs(x$p.value - 1 / (x$B_ok + 1)) < 1e-12))
+    cat(sprintf(paste0("  (no replicate was as extreme as the data: the p-value is at the floor 1/(B + 1) of %d ",
+                       "replicates, so it is at most that; raise B for a finer one)\n"), as.integer(x$B_ok)))
   cat("alternative hypothesis: ", x$alternative, "\n", sep = "")
   for (nt in x$note) cat("note: ", nt, "\n", sep = "")
   cat(sprintf("estimate: %s = %.4f  (Poisson value %s)\n", names(x$estimate), x$estimate, format(x$null.value)))

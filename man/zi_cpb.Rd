@@ -14,12 +14,13 @@ zi_cpb(
   se = c("none", "bootstrap"),
   B = 500,
   cluster = NULL,
-  max.support = 500,
+  max.support = NULL,
   maxit = 200,
   tol = 1e-06,
   offset = NULL,
   weights = NULL,
-  cores = 1L
+  cores = 1L,
+  support = c("ceiling", "floor")
 )
 }
 \arguments{
@@ -32,15 +33,41 @@ defaults to the intensity model's right-hand side.}
 
 \item{fe}{Optional column name for unit fixed effects in the intensity (count)
 component. Under \code{method = "ml"} the unit effects enter as plug-in offsets
-from a first-stage fit; under \code{method = "em"} a classification
-(hard-assignment) step handles the structural zeros.}
+from a first-stage fit to the positive counts, and on King's support the
+fit is then polished on the observed-data likelihood with every unit's
+effect free, so that it is a joint maximum of the mixture likelihood (on
+the floor support the fit keeps the plug-in effects, which are not a joint
+maximum: a unit whose positive counts are all 1 takes an arbitrary point of
+the first stage's flat set, so the inflation equation and the
+log-likelihood can depend on the order of the rows); under
+\code{method = "em"} a classification (hard-assignment) step handles the
+structural zeros before the same polish. A unit with no
+positive count is left out of the estimation, as fixest leaves such units
+out of a Poisson fixed-effects fit: at the maximum its count effect is minus
+infinity, so its zeros are certain whatever its structural-zero
+probability, and its rows add nothing to the likelihood or the degrees of
+freedom. Its rows stay in the fit at that limit (the effect at the
+\code{\link[=cpb_fe]{cpb_fe()}} sentinel, 30 log units below the unit's largest linear
+predictor), with fitted means of zero, and the fit records
+the units in \code{zero_units} and their number in \code{n_zero_units}. Their
+structural-zero probability is \code{NA} where the zero equation would give
+them their own dummy (\code{zero_fe}), which their zeros cannot identify. On the
+floor support such units stay in the estimation with a filled-in count
+effect (the smallest estimated effect minus 2 under \code{"ml"}, the mean effect
+under \code{"em"}).}
 
 \item{zero_fe}{Optional column name for fixed effects in the zero-inflation
-equation, entered as factor dummies (opt-in).}
+equation, entered as factor dummies (opt-in). On King's support the dummy
+of a unit with no positive count is not counted in the degrees of freedom
+(see \code{\link[=compare_models]{compare_models()}}, Degrees of freedom), and in new data such a unit's
+rows get the structural-zero probability one and those of a unit whose
+every count is positive (\code{zero_fe_one_units}) zero; a unit the fit has not
+seen, or every row when \code{newdata} lacks the column, enters at the zero
+equation's reference unit.}
 
-\item{method}{Estimation method: \code{"ml"} (default) is robust direct joint
-maximum likelihood seeded from separate fits; \code{"em"} is expectation-
-maximization, retained for comparison but prone to a degenerate
+\item{method}{Estimation method: \code{"ml"} (default) is direct joint maximum
+likelihood from the starts described above; \code{"em"} is
+expectation-maximization, retained for comparison but prone to a degenerate
 structural-zero-probability collapse under heavy zero-inflation.}
 
 \item{se}{Coefficient inference: \code{"none"} (default) or \code{"bootstrap"}.}
@@ -51,7 +78,9 @@ structural-zero-probability collapse under heavy zero-inflation.}
 under fixed effects the units are resampled by default. The mixture EM makes
 the bootstrap costly, so keep \code{B} modest.}
 
-\item{max.support}{Maximum support for the CPB pmf.}
+\item{max.support}{Guard on the evaluated support of the count component; see
+\code{\link[=cpb]{cpb()}}. The default \code{NULL} sets \code{max(500, 10 * max(y))} (500 on the floor
+support). It is kept with the fit for \code{\link[=simulate]{simulate()}}.}
 
 \item{maxit}{Optimizer iteration budget (scaled internally for the joint
 maximization; also the EM iteration cap under \code{method = "em"}).}
@@ -60,17 +89,21 @@ maximization; also the EM iteration cap under \code{method = "em"}).}
 
 \item{offset}{Optional exposure offset (log scale) for the count component:
 a numeric vector or the name of a column in \code{data}, making the count a
-rate model. Supported for \code{method = "ml"} without \code{fe} (the fixed-effects
-path's plug-in unit effects have no offset handling yet, and errors
-loudly). The bootstrap carries the offset through every replicate.}
+rate model. Supported for \code{method = "ml"} without \code{fe}; with \code{fe}, an
+offset is refused with an error. The bootstrap carries the offset through
+every replicate.}
 
 \item{weights}{Optional frequency weights (a numeric vector or a column name);
 see \code{\link[=cpb]{cpb()}}. Supported for \code{method = "ml"}.}
 
 \item{cores}{Worker processes for the bootstrap; see \code{\link[=cpb]{cpb()}}.}
+
+\item{support}{The CPB's support, \code{"ceiling"} (King's CPB, the default) or
+\code{"floor"}; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
-An object of class \code{"zi_cpb"}.
+An object of class \code{"zi_cpb"}. Its component \code{separation} holds the
+separation check (see Separation).
 }
 \description{
 Fits the zero-inflated CPB. The model mixes a structural-zero process
@@ -78,17 +111,87 @@ Fits the zero-inflated CPB. The model mixes a structural-zero process
 with an untruncated CPB for the count, so a zero can arise either structurally
 or as a sampling zero from the CPB. Unlike \code{\link[=hurdle_cpb]{hurdle_cpb()}}, the likelihood does
 not factorize, so the parameters are estimated by direct joint maximum
-likelihood, seeded from separate fits (a zero-truncated CPB on the positives
-and a logit of the zero indicator) and cross-checked against an
-expectation-maximization climb of the same observed-data likelihood, keeping
-the better optimum. An EM-only path (\code{method = "em"}) is retained for
-comparison.
+likelihood. The mixture likelihood's optima differ with the structural share
+of zeros, so the search starts from points that span it: separate fits (a
+zero-truncated CPB on the positives and a logit of the zero indicator), the
+zero-inflated Poisson's coefficients, and a low-inflation start (a constant
+structural-zero probability of 0.02), followed by a BFGS pass; it is
+cross-checked against an expectation-maximization climb of the same
+observed-data likelihood, keeping the better optimum. The separation check
+(Separation) restarts the final polish from any better point it finds. An
+EM-only path (\code{method = "em"}) is retained for comparison.
 }
 \details{
 The inflation equation uses a logit link. For a probit or cloglog inflation
 link, use \code{\link[=zi_count]{zi_count()}} (Poisson/NB/COM-Poisson count), whose \code{link} argument
 covers the binary stage.
 }
+\section{Separation}{
+
+A zero contributes \verb{log(pi + (1 - pi) f0)} to the likelihood, which rises
+with \code{pi}, and a positive count contributes \verb{log(1 - pi) + log f(y)}, which
+falls with it. So a coefficient of the zero-inflation equation can grow without
+bound, and the likelihood with it, under three conditions. The zeros it pushes
+toward \code{pi = 1} can go there freely, and so can the positives it pushes toward
+\code{pi = 0}. The count component's probability of a zero, \code{f0}, covers the zeros
+it pushes toward \code{pi = 0}. Unlike separation in a logistic regression, this
+needs no covariate that splits the zeros from the positives. So a
+\code{\link[=hurdle_cpb]{hurdle_cpb()}} whose participation logit uses the same covariates can have a
+finite maximum while the mixture has none. The optimizer then stops somewhere
+along the divergent path. The zero equation's coefficients there are not
+estimates, and the log-likelihood approximates a supremum, so likelihood
+comparisons with the fit (likelihood ratio, AIC, Vuong) lack their usual
+reference distributions.
+
+After the fit, the profile likelihood of each covariate coefficient in the
+zero equation is evaluated at the estimate. It is evaluated again at 10 and at
+100 standard deviations of its covariate further from zero. Each time, the
+other zero-equation coefficients are re-maximized with the count component
+held at its estimate. The fit warns when a coefficient's profile 100 standard
+deviations out is less than \code{qchisq(0.95, 1) / 2} below its value at the
+estimate. That coefficient's 95\% profile interval then reaches past an effect
+of 100 on the log-odds per standard deviation, and the data put no useful
+bound on it. This covers a coefficient with no finite estimate and one whose
+finite maximum lies on a near-flat ridge, which a fit cannot tell apart.
+Holding the count component fixed can only lower the profile, so the full
+model's interval is at least as wide. Every profile can also reach the
+no-inflation boundary, where each structural-zero probability is zero and the
+zero equation drops out. A coefficient whose profile at the estimate lies
+within \code{qchisq(0.95, 1) / 2} of that limit is unbounded because the data show
+little inflation, not by separation, so it is not flagged, and the fit is
+reported as near the boundary instead (\code{\link[=zi_test]{zi_test()}} tests it). The
+intercept and the \code{zero_fe} dummies are not checked. Their limits are the
+no-inflation boundary (\code{\link[=zi_test]{zi_test()}}) and the boundaries of single units (a unit
+with no positive count, whose structural-zero probability goes to one, as in a
+fixed-effects logit; with \code{fe}, such a unit is left out of the estimation,
+see \code{fe}). The component \code{separation} of the fit holds:
+\itemize{
+\item \code{diverging}: the terms the data do not bound;
+\item \code{profile}: the profile steps;
+\item \code{short_of_max}: how far the best point the check found lies above the fit,
+with the count component unchanged. That point can come from the
+re-maximization at the estimate, when the fit is not a stationary point of
+the zero equation, or from a profile that rises above its value at the
+estimate, since the mixture likelihood is not concave and a profile can rise
+before it falls. A positive value means the optimizer stopped at least that
+far below the maximum;
+\item \code{best}: the zero-equation coefficients at that point (\code{NULL} when there is
+none);
+\item \code{restarts}, \code{restart_gain}: when the check finds a point at least 0.01
+higher, the fit restarts its final polish there, with every parameter it
+estimates free, keeps the result only if it gains, and checks again, up to
+three times. These record the restarts kept and their total gain in
+log-likelihood. The other components describe the final fit;
+\item \code{no_inflation}, \code{inflation_gain}: whether the best point lies within
+\code{qchisq(0.95, 1) / 2} of the no-inflation limit (the count component held),
+and its distance from it;
+\item \code{n_extreme}: the number of observations whose structural-zero probability is
+numerically 0 or 1, outside units that lie wholly at one edge.
+}
+
+\code{\link[=zi_gec]{zi_gec()}} and \code{\link[=zi_count]{zi_count()}} run the same check.
+}
+
 \examples{
 \donttest{
 set.seed(1)

@@ -9,26 +9,42 @@
   newdata = NULL,
   type = c("response", "count", "zero", "intensity"),
   offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
 \arguments{
 \item{object}{A \code{"zi_count"} object.}
 
-\item{newdata}{Optional data frame of covariate profiles.}
+\item{newdata}{Optional data frame of covariate profiles. A fixed-effects
+unit an equation has not seen, or every row when its column is absent,
+enters that equation at the reference unit. A \code{zero_fe} unit with no
+positive count gets the structural-zero probability one and one whose every
+count is positive zero, and an \code{fe} unit with no positive count a count
+mean of zero (see \code{\link[=compare_models]{compare_models()}}, Degrees of freedom).}
 
 \item{type}{\code{"response"} (marginal E(Y)), \code{"count"} (equivalently
 \code{"intensity"}; the count component's mean E(Y) of that component), or
 \code{"zero"} (structural-zero probability). \code{"intensity"} is accepted as a
 synonym for \code{"count"} for consistency with \code{\link[=predict.zi_cpb]{predict.zi_cpb()}}.}
 
-\item{offset}{Optional offset (log scale) for the count component when
-predicting on \code{newdata}; a numeric vector or a column name in \code{newdata}.}
+\item{offset}{Optional offset (log scale) of the count component for the
+\code{newdata} rows; by default the fit's own offset column is read from
+\code{newdata} (see \code{\link[=predict.cpb]{predict.cpb()}}).}
+
+\item{se.fit, interval, level}{Standard errors (\code{se.fit = TRUE}) and a
+\code{level} confidence interval (\code{interval = "confidence"}) of the predicted
+quantity at the rows of \code{newdata}; see \code{\link[=predict.cpb]{predict.cpb()}}.}
 
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predict from a zero-inflated Poisson/NB fit

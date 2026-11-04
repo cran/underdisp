@@ -7,7 +7,8 @@
 \method{confint}{cpb}(object, parm, level = 0.95, ...)
 }
 \arguments{
-\item{object}{A \code{"cpb"} object fit with \code{se = "bootstrap"}.}
+\item{object}{A \code{"cpb"} object. Coefficient intervals need \code{se = "bootstrap"} at fit time; the
+interval for \code{"alpha"} does not.}
 
 \item{parm}{Optional subset of parameters (coefficient names and/or \code{"alpha"}).}
 
@@ -19,10 +20,13 @@
 A matrix of lower/upper bounds.
 }
 \description{
-Coefficient intervals use the cold-multistart bootstrap percentile method
-(validated to nominal coverage). The interval for \code{alpha} is a
-profile-likelihood interval: first-order by default (it covers about 0.90 to
-0.94 in simulations from the CPB, with its misses on the upper side; see
-\code{\link[=calibrate_alpha]{calibrate_alpha()}} for the reason), and calibrated by parametric bootstrap
-when the fit went through \code{\link[=calibrate_alpha]{calibrate_alpha()}}.
+Coefficient intervals use the cold-multistart bootstrap percentile method. In
+simulations from King's CPB (n = 300) the 95\% interval for a slope covers 0.91
+at alpha 0.3, 0.95 at 0.5 and 0.94 at 0.7, and on the floor support 0.95. The
+interval for \code{alpha} is a
+profile-likelihood interval. It is first-order by default: on King's support
+it covers close to its level in simulations from the CPB, and on the floor
+support about 0.90 to 0.94, with most misses on the upper side (see
+\code{\link[=calibrate_alpha]{calibrate_alpha()}}). It is calibrated by parametric bootstrap when the fit
+went through \code{\link[=calibrate_alpha]{calibrate_alpha()}}.
 }

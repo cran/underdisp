@@ -47,8 +47,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpb_fe_nll_cpp
-List cpb_fe_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, NumericVector w, IntegerVector ustart, int n_units, int max_support, bool truncated, int inner_it, NumericVector awarm);
-RcppExport SEXP _underdisp_cpb_fe_nll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP wSEXP, SEXP ustartSEXP, SEXP n_unitsSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP inner_itSEXP, SEXP awarmSEXP) {
+List cpb_fe_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, NumericVector w, IntegerVector ustart, int n_units, int max_support, bool truncated, int inner_it, NumericVector awarm, bool floor_support);
+RcppExport SEXP _underdisp_cpb_fe_nll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP wSEXP, SEXP ustartSEXP, SEXP n_unitsSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP inner_itSEXP, SEXP awarmSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -63,13 +63,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
     Rcpp::traits::input_parameter< int >::type inner_it(inner_itSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type awarm(awarmSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_fe_nll_cpp(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, awarm));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_fe_nll_cpp(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, awarm, floor_support));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpb_fe_grad_cpp
-NumericVector cpb_fe_grad_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, NumericVector w, IntegerVector ustart, int n_units, int max_support, bool truncated, NumericVector a, IntegerVector edge);
-RcppExport SEXP _underdisp_cpb_fe_grad_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP wSEXP, SEXP ustartSEXP, SEXP n_unitsSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP aSEXP, SEXP edgeSEXP) {
+NumericVector cpb_fe_grad_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, NumericVector w, IntegerVector ustart, int n_units, int max_support, bool truncated, NumericVector a, IntegerVector edge, bool floor_support);
+RcppExport SEXP _underdisp_cpb_fe_grad_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP wSEXP, SEXP ustartSEXP, SEXP n_unitsSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP aSEXP, SEXP edgeSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -84,13 +85,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type a(aSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type edge(edgeSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_fe_grad_cpp(params, X, Y, offset, w, ustart, n_units, max_support, truncated, a, edge));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_fe_grad_cpp(params, X, Y, offset, w, ustart, n_units, max_support, truncated, a, edge, floor_support));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpb_dlogpmf_cpp
-NumericMatrix cpb_dlogpmf_cpp(IntegerVector y, NumericVector lam, double alpha, int max_support, bool truncated);
-RcppExport SEXP _underdisp_cpb_dlogpmf_cpp(SEXP ySEXP, SEXP lamSEXP, SEXP alphaSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP) {
+NumericMatrix cpb_dlogpmf_cpp(IntegerVector y, NumericVector lam, double alpha, int max_support, bool truncated, bool floor_support);
+RcppExport SEXP _underdisp_cpb_dlogpmf_cpp(SEXP ySEXP, SEXP lamSEXP, SEXP alphaSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -99,13 +101,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
     Rcpp::traits::input_parameter< int >::type max_support(max_supportSEXP);
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_dlogpmf_cpp(y, lam, alpha, max_support, truncated));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_dlogpmf_cpp(y, lam, alpha, max_support, truncated, floor_support));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpb_fe_intercepts_cpp
-NumericVector cpb_fe_intercepts_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, NumericVector w, IntegerVector ustart, int n_units, int max_support, bool truncated, int inner_it);
-RcppExport SEXP _underdisp_cpb_fe_intercepts_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP wSEXP, SEXP ustartSEXP, SEXP n_unitsSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP inner_itSEXP) {
+NumericVector cpb_fe_intercepts_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, NumericVector w, IntegerVector ustart, int n_units, int max_support, bool truncated, int inner_it, bool floor_support);
+RcppExport SEXP _underdisp_cpb_fe_intercepts_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP wSEXP, SEXP ustartSEXP, SEXP n_unitsSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP inner_itSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -119,13 +122,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type max_support(max_supportSEXP);
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
     Rcpp::traits::input_parameter< int >::type inner_it(inner_itSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_fe_intercepts_cpp(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_fe_intercepts_cpp(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, floor_support));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpb_nll_cpp
-double cpb_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, int max_support, bool truncated);
-RcppExport SEXP _underdisp_cpb_nll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP) {
+double cpb_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, int max_support, bool truncated, bool floor_support);
+RcppExport SEXP _underdisp_cpb_nll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -135,13 +139,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type offset(offsetSEXP);
     Rcpp::traits::input_parameter< int >::type max_support(max_supportSEXP);
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_nll_cpp(params, X, Y, offset, max_support, truncated));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_nll_cpp(params, X, Y, offset, max_support, truncated, floor_support));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpb_wnll_cpp
-double cpb_wnll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector w, NumericVector offset, int max_support, bool truncated);
-RcppExport SEXP _underdisp_cpb_wnll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP wSEXP, SEXP offsetSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP) {
+double cpb_wnll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector w, NumericVector offset, int max_support, bool truncated, bool floor_support);
+RcppExport SEXP _underdisp_cpb_wnll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP wSEXP, SEXP offsetSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -152,13 +157,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type offset(offsetSEXP);
     Rcpp::traits::input_parameter< int >::type max_support(max_supportSEXP);
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_wnll_cpp(params, X, Y, w, offset, max_support, truncated));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_wnll_cpp(params, X, Y, w, offset, max_support, truncated, floor_support));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpb_lp0_cpp
-NumericMatrix cpb_lp0_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, int max_support, bool truncated);
-RcppExport SEXP _underdisp_cpb_lp0_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP) {
+NumericMatrix cpb_lp0_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, int max_support, bool truncated, bool floor_support);
+RcppExport SEXP _underdisp_cpb_lp0_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP max_supportSEXP, SEXP truncatedSEXP, SEXP floor_supportSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -168,7 +174,21 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type offset(offsetSEXP);
     Rcpp::traits::input_parameter< int >::type max_support(max_supportSEXP);
     Rcpp::traits::input_parameter< bool >::type truncated(truncatedSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpb_lp0_cpp(params, X, Y, offset, max_support, truncated));
+    Rcpp::traits::input_parameter< bool >::type floor_support(floor_supportSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpb_lp0_cpp(params, X, Y, offset, max_support, truncated, floor_support));
+    return rcpp_result_gen;
+END_RCPP
+}
+// ewp_norm_cpp
+NumericMatrix ewp_norm_cpp(NumericVector loglambda, double beta1, double beta2);
+RcppExport SEXP _underdisp_ewp_norm_cpp(SEXP loglambdaSEXP, SEXP beta1SEXP, SEXP beta2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type loglambda(loglambdaSEXP);
+    Rcpp::traits::input_parameter< double >::type beta1(beta1SEXP);
+    Rcpp::traits::input_parameter< double >::type beta2(beta2SEXP);
+    rcpp_result_gen = Rcpp::wrap(ewp_norm_cpp(loglambda, beta1, beta2));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -257,21 +277,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// gec_nll_cpp
-double gec_nll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector offset, int max_support);
-RcppExport SEXP _underdisp_gec_nll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP offsetSEXP, SEXP max_supportSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< NumericVector >::type params(paramsSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< IntegerVector >::type Y(YSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type offset(offsetSEXP);
-    Rcpp::traits::input_parameter< int >::type max_support(max_supportSEXP);
-    rcpp_result_gen = Rcpp::wrap(gec_nll_cpp(params, X, Y, offset, max_support));
-    return rcpp_result_gen;
-END_RCPP
-}
 // gec_wnll_cpp
 double gec_wnll_cpp(NumericVector params, NumericMatrix X, IntegerVector Y, NumericVector w, NumericVector offset, int max_support);
 RcppExport SEXP _underdisp_gec_wnll_cpp(SEXP paramsSEXP, SEXP XSEXP, SEXP YSEXP, SEXP wSEXP, SEXP offsetSEXP, SEXP max_supportSEXP) {
@@ -343,29 +348,55 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// hp_loglambda_cpp
+NumericVector hp_loglambda_cpp(NumericVector mu, double gamma);
+RcppExport SEXP _underdisp_hp_loglambda_cpp(SEXP muSEXP, SEXP gammaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< double >::type gamma(gammaSEXP);
+    rcpp_result_gen = Rcpp::wrap(hp_loglambda_cpp(mu, gamma));
+    return rcpp_result_gen;
+END_RCPP
+}
+// hp_norm_cpp
+NumericMatrix hp_norm_cpp(NumericVector loglambda, double gamma);
+RcppExport SEXP _underdisp_hp_norm_cpp(SEXP loglambdaSEXP, SEXP gammaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type loglambda(loglambdaSEXP);
+    Rcpp::traits::input_parameter< double >::type gamma(gammaSEXP);
+    rcpp_result_gen = Rcpp::wrap(hp_norm_cpp(loglambda, gamma));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_underdisp_cmp_loglambda_cpp", (DL_FUNC) &_underdisp_cmp_loglambda_cpp, 2},
     {"_underdisp_cmp_logZ_cpp", (DL_FUNC) &_underdisp_cmp_logZ_cpp, 2},
     {"_underdisp_cmp_moments_cpp", (DL_FUNC) &_underdisp_cmp_moments_cpp, 2},
-    {"_underdisp_cpb_fe_nll_cpp", (DL_FUNC) &_underdisp_cpb_fe_nll_cpp, 11},
-    {"_underdisp_cpb_fe_grad_cpp", (DL_FUNC) &_underdisp_cpb_fe_grad_cpp, 11},
-    {"_underdisp_cpb_dlogpmf_cpp", (DL_FUNC) &_underdisp_cpb_dlogpmf_cpp, 5},
-    {"_underdisp_cpb_fe_intercepts_cpp", (DL_FUNC) &_underdisp_cpb_fe_intercepts_cpp, 10},
-    {"_underdisp_cpb_nll_cpp", (DL_FUNC) &_underdisp_cpb_nll_cpp, 6},
-    {"_underdisp_cpb_wnll_cpp", (DL_FUNC) &_underdisp_cpb_wnll_cpp, 7},
-    {"_underdisp_cpb_lp0_cpp", (DL_FUNC) &_underdisp_cpb_lp0_cpp, 6},
+    {"_underdisp_cpb_fe_nll_cpp", (DL_FUNC) &_underdisp_cpb_fe_nll_cpp, 12},
+    {"_underdisp_cpb_fe_grad_cpp", (DL_FUNC) &_underdisp_cpb_fe_grad_cpp, 12},
+    {"_underdisp_cpb_dlogpmf_cpp", (DL_FUNC) &_underdisp_cpb_dlogpmf_cpp, 6},
+    {"_underdisp_cpb_fe_intercepts_cpp", (DL_FUNC) &_underdisp_cpb_fe_intercepts_cpp, 11},
+    {"_underdisp_cpb_nll_cpp", (DL_FUNC) &_underdisp_cpb_nll_cpp, 7},
+    {"_underdisp_cpb_wnll_cpp", (DL_FUNC) &_underdisp_cpb_wnll_cpp, 8},
+    {"_underdisp_cpb_lp0_cpp", (DL_FUNC) &_underdisp_cpb_lp0_cpp, 7},
+    {"_underdisp_ewp_norm_cpp", (DL_FUNC) &_underdisp_ewp_norm_cpp, 3},
     {"_underdisp_dp_norm_cpp", (DL_FUNC) &_underdisp_dp_norm_cpp, 3},
     {"_underdisp_gp_norm_cpp", (DL_FUNC) &_underdisp_gp_norm_cpp, 3},
     {"_underdisp_gec_fe_nll_cpp", (DL_FUNC) &_underdisp_gec_fe_nll_cpp, 10},
     {"_underdisp_gec_fe_grad_cpp", (DL_FUNC) &_underdisp_gec_fe_grad_cpp, 10},
     {"_underdisp_gec_fe_intercepts_cpp", (DL_FUNC) &_underdisp_gec_fe_intercepts_cpp, 9},
-    {"_underdisp_gec_nll_cpp", (DL_FUNC) &_underdisp_gec_nll_cpp, 5},
     {"_underdisp_gec_wnll_cpp", (DL_FUNC) &_underdisp_gec_wnll_cpp, 6},
     {"_underdisp_gec_lp0_cpp", (DL_FUNC) &_underdisp_gec_lp0_cpp, 5},
     {"_underdisp_gec_pmf_cpp", (DL_FUNC) &_underdisp_gec_pmf_cpp, 4},
     {"_underdisp_gec_klen_cpp", (DL_FUNC) &_underdisp_gec_klen_cpp, 3},
     {"_underdisp_gec_mean_cpp", (DL_FUNC) &_underdisp_gec_mean_cpp, 3},
+    {"_underdisp_hp_loglambda_cpp", (DL_FUNC) &_underdisp_hp_loglambda_cpp, 2},
+    {"_underdisp_hp_norm_cpp", (DL_FUNC) &_underdisp_hp_norm_cpp, 2},
     {NULL, NULL, 0}
 };
 

@@ -16,7 +16,7 @@ hurdle_gec(
   B = 500,
   weights = NULL,
   cores = 1L,
-  max.support = 500
+  max.support = NULL
 )
 }
 \arguments{
@@ -28,7 +28,14 @@ hurdle_gec(
 to the intensity's right-hand side.}
 
 \item{part_fe}{Optional column name for fixed effects in the participation
-model (added as factor dummies).}
+model (added as factor dummies), whose slopes carry the dummy logit's
+incidental-parameters bias in short panels (see \code{\link[=hurdle_cpb]{hurdle_cpb()}}). The dummy
+of a unit that never participates is not counted in the degrees of freedom
+(see \code{\link[=compare_models]{compare_models()}}, Degrees of freedom). In new data such a unit, and
+one whose every count is positive, get the participation probability at
+their limits (zero and one), and an unseen unit enters at the reference
+unit, as in \code{\link[=hurdle_cpb]{hurdle_cpb()}}; the participation equation is checked for
+separation (\code{part_separation}).}
 
 \item{link}{Link for the participation model: \code{"logit"} (default), \code{"probit"},
 or \code{"cloglog"}.}
@@ -36,8 +43,9 @@ or \code{"cloglog"}.}
 \item{offset}{Optional offset (log scale) for the intensity: a numeric vector
 or a column name in \code{data}.}
 
-\item{cluster}{Optional cluster (column name or vector) for the intensity's
-cluster bootstrap.}
+\item{cluster}{Optional cluster (column name or vector): cluster-robust
+standard errors for the participation equation, and the cluster bootstrap
+of the intensity with \code{se = "bootstrap"}.}
 
 \item{se}{Intensity inference: \code{"none"} (default) or \code{"bootstrap"}.}
 
@@ -48,7 +56,8 @@ applied to both margins; see \code{\link[=cpb]{cpb()}}.}
 
 \item{cores}{Worker processes for the intensity bootstrap; see \code{\link[=cpb]{cpb()}}.}
 
-\item{max.support}{Guard on the maximum evaluated support.}
+\item{max.support}{Guard on the evaluated support of the intensity; \code{NULL}
+(default) sets \code{max(500, 10 * max(y))}. See \code{\link[=gec]{gec()}}.}
 }
 \value{
 An object of class \code{"hurdle_gec"}.

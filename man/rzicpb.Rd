@@ -4,16 +4,19 @@
 \alias{rzicpb}
 \title{Simulate from the zero-inflated continuous parameter binomial}
 \usage{
-rzicpb(n, lambda, alpha, pi)
+rzicpb(n, lambda, alpha, pi, support = c("ceiling", "floor"))
 }
 \arguments{
 \item{n}{Number of units.}
 
-\item{lambda}{Intensity mean; scalar or length-\code{n}.}
+\item{lambda}{Intensity rate (the CPB's \code{lambda}); scalar or length-\code{n}.}
 
 \item{alpha}{CPB shape parameter in (0, 1).}
 
 \item{pi}{Structural-zero probability; scalar or length-\code{n}.}
+
+\item{support}{The CPB's support, \code{"ceiling"} (King's CPB, the default) or
+\code{"floor"}; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
 An integer vector: a structural zero with probability \code{pi}, otherwise

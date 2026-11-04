@@ -13,32 +13,36 @@ cmp_moments_cpp <- function(loglambda, nu) {
     .Call(`_underdisp_cmp_moments_cpp`, loglambda, nu)
 }
 
-cpb_fe_nll_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, awarm) {
-    .Call(`_underdisp_cpb_fe_nll_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, awarm)
+cpb_fe_nll_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, awarm, floor_support) {
+    .Call(`_underdisp_cpb_fe_nll_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, awarm, floor_support)
 }
 
-cpb_fe_grad_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_support, truncated, a, edge) {
-    .Call(`_underdisp_cpb_fe_grad_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, truncated, a, edge)
+cpb_fe_grad_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_support, truncated, a, edge, floor_support) {
+    .Call(`_underdisp_cpb_fe_grad_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, truncated, a, edge, floor_support)
 }
 
-cpb_dlogpmf_cpp <- function(y, lam, alpha, max_support, truncated) {
-    .Call(`_underdisp_cpb_dlogpmf_cpp`, y, lam, alpha, max_support, truncated)
+cpb_dlogpmf_cpp <- function(y, lam, alpha, max_support, truncated, floor_support) {
+    .Call(`_underdisp_cpb_dlogpmf_cpp`, y, lam, alpha, max_support, truncated, floor_support)
 }
 
-cpb_fe_intercepts_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it) {
-    .Call(`_underdisp_cpb_fe_intercepts_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it)
+cpb_fe_intercepts_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, floor_support) {
+    .Call(`_underdisp_cpb_fe_intercepts_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, truncated, inner_it, floor_support)
 }
 
-cpb_nll_cpp <- function(params, X, Y, offset, max_support, truncated) {
-    .Call(`_underdisp_cpb_nll_cpp`, params, X, Y, offset, max_support, truncated)
+cpb_nll_cpp <- function(params, X, Y, offset, max_support, truncated, floor_support) {
+    .Call(`_underdisp_cpb_nll_cpp`, params, X, Y, offset, max_support, truncated, floor_support)
 }
 
-cpb_wnll_cpp <- function(params, X, Y, w, offset, max_support, truncated) {
-    .Call(`_underdisp_cpb_wnll_cpp`, params, X, Y, w, offset, max_support, truncated)
+cpb_wnll_cpp <- function(params, X, Y, w, offset, max_support, truncated, floor_support) {
+    .Call(`_underdisp_cpb_wnll_cpp`, params, X, Y, w, offset, max_support, truncated, floor_support)
 }
 
-cpb_lp0_cpp <- function(params, X, Y, offset, max_support, truncated) {
-    .Call(`_underdisp_cpb_lp0_cpp`, params, X, Y, offset, max_support, truncated)
+cpb_lp0_cpp <- function(params, X, Y, offset, max_support, truncated, floor_support) {
+    .Call(`_underdisp_cpb_lp0_cpp`, params, X, Y, offset, max_support, truncated, floor_support)
+}
+
+ewp_norm_cpp <- function(loglambda, beta1, beta2) {
+    .Call(`_underdisp_ewp_norm_cpp`, loglambda, beta1, beta2)
 }
 
 dp_norm_cpp <- function(mu, theta, cap) {
@@ -61,10 +65,6 @@ gec_fe_intercepts_cpp <- function(params, X, Y, offset, w, ustart, n_units, max_
     .Call(`_underdisp_gec_fe_intercepts_cpp`, params, X, Y, offset, w, ustart, n_units, max_support, inner_it)
 }
 
-gec_nll_cpp <- function(params, X, Y, offset, max_support) {
-    .Call(`_underdisp_gec_nll_cpp`, params, X, Y, offset, max_support)
-}
-
 gec_wnll_cpp <- function(params, X, Y, w, offset, max_support) {
     .Call(`_underdisp_gec_wnll_cpp`, params, X, Y, w, offset, max_support)
 }
@@ -83,5 +83,13 @@ gec_klen_cpp <- function(mu, delta, max_support) {
 
 gec_mean_cpp <- function(mu, delta, max_support) {
     .Call(`_underdisp_gec_mean_cpp`, mu, delta, max_support)
+}
+
+hp_loglambda_cpp <- function(mu, gamma) {
+    .Call(`_underdisp_hp_loglambda_cpp`, mu, gamma)
+}
+
+hp_norm_cpp <- function(loglambda, gamma) {
+    .Call(`_underdisp_hp_norm_cpp`, loglambda, gamma)
 }
 

@@ -3,41 +3,41 @@
 \name{tidy.cpb}
 \alias{tidy.cpb}
 \alias{tidy.cpb_fe}
-\alias{tidy.hurdle_cpb}
-\alias{tidy.zi_cpb}
 \alias{tidy.gec}
-\alias{tidy.hurdle_gec}
-\alias{tidy.zi_gec}
 \alias{tidy.count_reg}
-\alias{tidy.zi_count}
+\alias{tidy.hurdle_cpb}
+\alias{tidy.hurdle_gec}
 \alias{tidy.hurdle_count}
-\title{Tidy a CPB fit (broom method)}
+\alias{tidy.zi_cpb}
+\alias{tidy.zi_gec}
+\alias{tidy.zi_count}
+\title{Tidy a fitted model (broom method)}
 \usage{
 \method{tidy}{cpb}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{cpb_fe}(x, ...)
+\method{tidy}{cpb_fe}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{hurdle_cpb}(x, ...)
+\method{tidy}{gec}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{zi_cpb}(x, ...)
+\method{tidy}{count_reg}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{gec}(x, ...)
+\method{tidy}{hurdle_cpb}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{hurdle_gec}(x, ...)
+\method{tidy}{hurdle_gec}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{zi_gec}(x, ...)
+\method{tidy}{hurdle_count}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{count_reg}(x, ...)
+\method{tidy}{zi_cpb}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{zi_count}(x, ...)
+\method{tidy}{zi_gec}(x, conf.int = FALSE, conf.level = 0.95, ...)
 
-\method{tidy}{hurdle_count}(x, ...)
+\method{tidy}{zi_count}(x, conf.int = FALSE, conf.level = 0.95, ...)
 }
 \arguments{
-\item{x}{A \code{"cpb"} object.}
+\item{x}{A fitted model from this package.}
 
-\item{conf.int}{If \code{TRUE}, add \code{conf.low}/\code{conf.high} (requires a fit with
-bootstrap standard errors).}
+\item{conf.int}{If \code{TRUE}, add \code{conf.low}/\code{conf.high}, the intervals of
+\code{\link[=confint]{confint()}} (\code{NA} where the fit carries no inference).}
 
 \item{conf.level}{Confidence level for the interval.}
 
@@ -47,8 +47,22 @@ bootstrap standard errors).}
 A data frame with one row per coefficient.
 }
 \description{
-The two-part classes (\verb{hurdle_*}, \verb{zi_*}) return one row per coefficient
-in each equation, with a \code{component} column (the \pkg{broom} convention for
-multi-equation models) and the term prefixed by its component, so that
-\pkg{modelsummary} lays the table out without a \code{shape} argument.
+One row per coefficient with its estimate, standard error, z statistic and
+p-value, for every model class of the package. The two-part classes
+(\verb{hurdle_*}, \verb{zi_*}) have a \code{component} column (the \pkg{broom} convention
+for multi-equation models) and the term prefixed by its component, so that
+\pkg{modelsummary} lays the table out without a \code{shape} argument. A term of
+a zero-inflation or participation equation that the data do not bound
+(separation; see \code{\link[=zi_cpb]{zi_cpb()}}) has no standard error.
+}
+\details{
+The \code{scale} column names what each coefficient multiplies: \code{"log mean"}
+for the mean-parameterized count families (\code{"log untruncated mean"} for a
+zero-truncated fit or a hurdle's intensity), the binary equation's link for a
+participation or zero-inflation row, and otherwise the family's own
+parameter (\code{"log rate"} for the CPB and GEC, \code{"log lambda"} for the
+rate-parameterized COM-Poisson, \code{"log centrality"} for the EWP, and so on;
+see \link{irr.count}). Coefficients on different scales are not comparable
+across the columns of a table; \code{\link[=ame]{ame()}} puts every model's effect on the
+mean.
 }

@@ -33,17 +33,22 @@ test_that("rcpb and rhurdle_cpb behave", {
   expect_true(mean(y == 0) > 0.2)           # a genuine hurdle at zero
 })
 
-test_that("the zero-truncated CPB at a ceiling below 1 is the point mass at 1 everywhere", {
-  ## lambda = 0.3, alpha = 0.5: ceiling 0.6, so the untruncated CPB is the point mass at 0
-  expect_equal(underdisp:::.cpb_pmf1(0.3, 0.5, 3, truncated = TRUE), c(0, 1, 0, 0))
-  expect_equal(dcpb(0:2, 0.3, 0.5, truncated = TRUE), c(0, 1, 0))
-  expect_equal(underdisp:::.cpb_ztmean(0.3, 0.5), 1)
-  expect_equal(underdisp:::.cpb_mean1(0.3, 0.5, truncated = TRUE), 1)
-  expect_equal(unname(underdisp:::.cpb_moments(0.3, 0.5, truncated = TRUE)$var), 0)
+test_that("on the floor support the zero-truncated CPB at a ceiling below 1 is the point mass at 1 everywhere", {
+  ## lambda = 0.3, alpha = 0.5: ceiling 0.6, so the untruncated floor-support CPB is the point mass at 0
+  fl <- "floor"
+  expect_equal(underdisp:::.cpb_pmf1(0.3, 0.5, 3, truncated = TRUE, support = fl), c(0, 1, 0, 0))
+  expect_equal(dcpb(0:2, 0.3, 0.5, truncated = TRUE, support = fl), c(0, 1, 0))
+  expect_equal(underdisp:::.cpb_ztmean(0.3, 0.5, fl), 1)
+  expect_equal(underdisp:::.cpb_mean(0.3, 0.5, TRUE, fl), 1)
+  expect_equal(unname(underdisp:::.cpb_moments(0.3, 0.5, truncated = TRUE, support = fl)$var), 0)
   ## the simulator follows the same rule and says so: the stated parameters give such a count probability zero
-  set.seed(1); expect_warning(yy <- rcpb(20, 0.3, 0.5, truncated = TRUE), "ceiling")
+  set.seed(1); expect_warning(yy <- rcpb(20, 0.3, 0.5, truncated = TRUE, support = fl), "ceiling")
   expect_true(all(yy == 1))
-  expect_silent(rcpb(20, 3, 0.5, truncated = TRUE))
+  expect_silent(rcpb(20, 3, 0.5, truncated = TRUE, support = fl))
   ## at a ceiling of exactly 1 the same distribution holds
-  expect_equal(underdisp:::.cpb_pmf1(0.5, 0.5, 3, truncated = TRUE), c(0, 1, 0, 0))
+  expect_equal(underdisp:::.cpb_pmf1(0.5, 0.5, 3, truncated = TRUE, support = fl), c(0, 1, 0, 0))
+  ## King's support is {0, 1} at both rates, so its zero-truncated form is the same point mass, and the
+  ## simulator has nothing to warn about
+  expect_equal(dcpb(0:2, 0.3, 0.5, truncated = TRUE), c(0, 1, 0))
+  set.seed(1); expect_silent(rcpb(20, 0.3, 0.5, truncated = TRUE))
 })

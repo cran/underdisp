@@ -15,6 +15,7 @@ first_difference(object, ...)
   quantity = c("mean", "ceiling", "prob"),
   y = NULL,
   level = 0.95,
+  at = NULL,
   ...
 )
 }
@@ -36,6 +37,10 @@ mean E(Y | Y >= 1)), \code{"ceiling"} (lambda/(1-alpha)), or \code{"prob"}
 \item{y}{The count value for \code{quantity = "prob"}.}
 
 \item{level}{Confidence level (default 0.95).}
+
+\item{at}{Optional named numeric vector fixing other model-matrix columns at
+given values instead of their means, e.g. \code{at = c(z = 1, regionB = 0)} (a
+factor's dummies are columns, so a reference level sets them to 0).}
 }
 \value{
 A \code{"ud_fd"} data frame -- the package-wide first-difference contract
@@ -46,14 +51,27 @@ interval on the difference (\code{method = "bootstrap (stored)"}). Every
 }
 \description{
 The effect on a quantity of interest of moving one covariate \code{from} one value \code{to}
-another, holding the other covariates at their means, with a percentile
-interval from the model's bootstrap draws when the fit carries them.
+another, holding the other covariates at their means (or at the values \code{at}
+gives them).
+}
+\details{
+Every \code{first_difference()} method in the package takes its interval by one
+rule. When the fit carries bootstrap draws (\code{se = "bootstrap"} at fit
+time), the quantity is computed at every draw, jointly over the
+coefficients and the dispersion parameter (and, for a fixed-effects fit, the
+reference unit's effect), and the percentile interval is taken; the draws of
+a fixed-effects fit are first recentered on the reported estimate, because
+its replicates share the incidental-parameters bias. Otherwise the interval
+is the delta method's over the fit's full covariance, the dispersion
+parameter included (the matched count families' analytic, robust or
+clustered covariance; a hurdle's two margins, which are independent). A fit
+with neither gets the point estimate with \code{method = "none"}.
 }
 \examples{
 \donttest{
 set.seed(1); x <- rnorm(250)
 N <- pmax(round(exp(1.6 + 0.5 * x) / 0.5), 1); y <- rbinom(250, N, 0.5)
-fit <- cpb(y ~ x, data = data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 60)
+fit <- cpb(y ~ x, data = data.frame(y = y, x = x)[y > 0, ], se = "bootstrap", B = 100)
 first_difference(fit, "x", from = -1, to = 1, quantity = "mean")
 }
 }

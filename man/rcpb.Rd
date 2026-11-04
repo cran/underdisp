@@ -4,16 +4,19 @@
 \alias{rcpb}
 \title{Simulate from the continuous parameter binomial}
 \usage{
-rcpb(n, lambda, alpha, truncated = FALSE)
+rcpb(n, lambda, alpha, truncated = FALSE, support = c("ceiling", "floor"))
 }
 \arguments{
 \item{n}{Number of draws (recycled against \code{lambda}).}
 
-\item{lambda}{Mean parameter; a scalar or a length-\code{n} vector.}
+\item{lambda}{Rate parameter; a scalar or a length-\code{n} vector (see \code{\link[=dcpb]{dcpb()}}).}
 
 \item{alpha}{Shape/dispersion parameter in (0, 1).}
 
 \item{truncated}{If \code{TRUE}, draw from the zero-truncated CPB.}
+
+\item{support}{The CPB's support, \code{"ceiling"} (King's CPB, the default) or
+\code{"floor"}; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
 An integer vector of counts.
@@ -23,13 +26,14 @@ Draws counts from the continuous parameter binomial (CPB) or its
 zero-truncated variant.
 }
 \details{
-The support of the CPB is \verb{0, ..., floor(lambda / (1 - alpha))}. A rate
-whose ceiling \code{lambda / (1 - alpha)} is below 1 has the support \code{{0}}, so its
-zero-truncated distribution does not exist. With \code{truncated = TRUE} such a
-draw is set to 1 and a warning reports how many there were: the stated
-parameters give that count probability zero, so data simulated this way are
-not data from the model (in a simulation study, keep every ceiling at 1 or
-above).
+King's CPB has the support \verb{0, ..., ceiling(lambda / (1 - alpha))},
+which contains 1 for every positive rate. The floor support,
+\verb{0, ..., floor(lambda / (1 - alpha))}, is \code{{0}} for a rate whose ceiling is
+below 1, so its zero-truncated distribution does not exist. With
+\code{truncated = TRUE} such a draw is set to 1 and a warning reports how many
+there were: the stated parameters give that count probability zero, so data
+simulated this way are not data from the model (in a simulation study, keep
+every ceiling at 1 or above).
 }
 \examples{
 set.seed(1)

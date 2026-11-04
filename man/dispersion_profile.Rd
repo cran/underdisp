@@ -55,13 +55,19 @@ against the ratio each fitted family implies at those means. The families
 differ in how their dispersion moves with the mean: the CPB and the Katz
 family hold it essentially constant (at \code{alpha} and \code{delta}; the implied
 curves are the exact moments of the fitted pmf, so the renormalized CPB's
-ratio dips a little below \code{alpha} where the ceiling is only two or three),
+ratio rises above \code{alpha} where the implied ceiling is small: by up to about a
+third at \code{alpha = 0.3} where \eqn{\lambda/(1-\alpha)} lies between one and
+three, and toward one, the Poisson's value, as the rate falls toward zero; on
+the floor support it dips below \code{alpha} instead),
 the COM-Poisson, gamma-count, and double Poisson approach a constant only as
 the mean grows and rise toward the Poisson at small means, and the negative
-binomial's ratio rises linearly. The profile therefore
-shows which mechanism the data follow, where a family's variance function
-fails, and whether the observed underdispersion is confined to a range of
-means. Zero-truncated fits are profiled on their conditional moments. With
+binomial's ratio rises linearly; the hyper-Poisson's cannot fall below
+\eqn{1 - 1/\mu} (\eqn{1 - \mu} below a mean of one), so it approaches one as
+the mean grows, and the EWP's follows its two tail weights. The profile
+therefore shows which variance function the data follow (a fitted
+distribution does not by itself identify the process behind it), where a
+family's fails, and whether the observed underdispersion is confined to a
+range of means. Zero-truncated fits are profiled on their conditional moments. With
 frequency weights (those of the first model) the bins hold equal weight
 rather than equal numbers of rows, each row kept whole, every bin statistic
 is a weighted mean, and \code{n} is the bin's weight total, so a weighted fit is

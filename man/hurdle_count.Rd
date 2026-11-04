@@ -8,7 +8,7 @@ hurdle_count(
   formula,
   data,
   family = c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount",
-    "doublepois"),
+    "doublepois", "hyperpois", "ewp3", "ewp2"),
   participation = NULL,
   fe = NULL,
   part_fe = NULL,
@@ -30,7 +30,16 @@ hurdle_count(
 defaults to the intensity right-hand side.}
 
 \item{fe, part_fe}{Optional fixed-effects column names for the intensity and
-participation models (entered as factor dummies).}
+participation models (entered as factor dummies). The participation
+slopes carry the dummy logit's incidental-parameters bias in short panels
+(see \code{\link[=hurdle_cpb]{hurdle_cpb()}}). The participation dummy of a unit that never
+participates is not counted in the degrees of freedom (see
+\code{\link[=compare_models]{compare_models()}}, Degrees of freedom). In new data such a unit, and one
+whose every count is positive, get the participation probability at their
+limits (zero and one; with one \code{part_fe} column), and a unit either
+equation has not seen (the intensity never sees a unit with no positive
+count) enters that equation at its reference unit, as in \code{\link[=hurdle_cpb]{hurdle_cpb()}};
+the participation equation is checked for separation (\code{part_separation}).}
 
 \item{link}{Link for the participation model: \code{"logit"} (default), \code{"probit"},
 or \code{"cloglog"}. Positive participation coefficients raise the probability of
@@ -42,8 +51,10 @@ scale: a numeric vector or the name of a column in \code{data}.}
 \item{weights}{Optional frequency weights (a numeric vector or a column name),
 applied to both margins; see \code{\link[=count_reg]{count_reg()}}.}
 
-\item{se, cluster}{Standard-error type and optional cluster for the intensity;
-see \code{\link[=count_reg]{count_reg()}}.}
+\item{se, cluster}{Standard-error type and optional cluster; see
+\code{\link[=count_reg]{count_reg()}}. They apply to both margins: the participation equation's
+standard errors are model-based, robust or cluster-robust with the
+intensity's.}
 }
 \value{
 An object of class \code{"hurdle_count"}.

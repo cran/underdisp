@@ -46,3 +46,17 @@ test_that("bad weights are refused with the argument named", {
   expect_error(gec(y ~ x, d0, se = "none", weights = "nope"), "weights")
   expect_error(zi_cpb(y ~ x, d0, zero = ~ z, weights = w, method = "em"), "weights")
 })
+
+test_that("a weighted zi_cpb(fe) on King's support is the fit to the expanded rows", {
+  set.seed(11); N <- 30; Tt <- 6; n <- N * Tt
+  d <- data.frame(unit = rep(seq_len(N), each = Tt), x = rnorm(n), z = rnorm(n))
+  lam <- exp(0.8 + 0.3 * d$x + rep(rnorm(N, 0, 0.3), each = Tt))
+  d$y <- ifelse(rbinom(n, 1, plogis(-1 + 0.5 * d$z)) == 1, 0L, rcpb(n, lam, 0.5))
+  d$w <- sample(1:3, n, TRUE)
+  fw <- zi_cpb(y ~ x, d, zero = ~ z, fe = "unit", weights = "w")
+  fx <- zi_cpb(y ~ x, d[rep(seq_len(n), d$w), ], zero = ~ z, fe = "unit")
+  expect_equal(fw$loglik, fx$loglik, tolerance = 1e-5)
+  expect_equal(c(fw$coefficients, alpha = fw$alpha, fw$zero_coef), c(fx$coefficients, alpha = fx$alpha, fx$zero_coef),
+               tolerance = 1e-3)
+  expect_equal(fw$nobs_weighted, nrow(d[rep(seq_len(n), d$w), ]))
+})

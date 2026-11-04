@@ -17,7 +17,8 @@ cpb(
   alpha.start = 0.5,
   max.support = NULL,
   maxit = 20000,
-  reltol = 1e-08
+  reltol = 1e-08,
+  support = c("ceiling", "floor")
 )
 }
 \arguments{
@@ -42,9 +43,20 @@ specification between the two.}
 column name in \code{data} or a vector aligned to its rows. When supplied, the
 bootstrap resamples whole clusters (a block bootstrap), giving
 cluster-robust standard errors and intervals; when \code{NULL} (default) it
-resamples observations, giving heteroskedasticity-robust errors. This is
-the appropriate route to robust inference here because the CPB's
-parameter-dependent support makes a Hessian-based sandwich unreliable.}
+resamples observations, giving heteroskedasticity-robust errors (a
+Hessian-based sandwich is unreliable here; see Details). Robust errors
+protect inference about the best-fitting CPB's parameters. The mean effects
+computed from them are the data's only when the CPB is the data's process:
+on underdispersed counts from another process (binomial counts with
+varying trials, a COM-Poisson) the CPB's average marginal effects can be
+off by several percent at any sample size, while the robust Poisson's
+(\code{\link[=count_reg]{count_reg()}} with \code{se = "robust"}) are consistent whenever the mean is
+log-linear; the two fits' \code{\link[=ame]{ame()}} side by side is the check. Nor do robust errors protect
+the CPB's distributional claims (its ceiling, its predicted probabilities)
+when the CPB is wrong: King and Roberts (2015) read a gap between robust
+and model-based errors as a sign of misspecification to fix.
+\code{\link[=ceiling_exceedance]{ceiling_exceedance()}}, \code{\link[=rootogram]{rootogram()}}, \code{\link[=pit_hist]{pit_hist()}} and \code{\link[=compare_models]{compare_models()}}
+check those claims.}
 
 \item{offset}{Optional offset on the log-mean scale (an exposure): a numeric
 vector or the name of a column in \code{data}, making the model a rate model.}
@@ -62,14 +74,26 @@ reproduces a parallel run (parallel and serial draws differ).}
 \item{alpha.start}{Starting value for the dispersion parameter (default 0.5); the
 fit also multi-starts over a spread of alpha values.}
 
-\item{max.support}{Guard on the maximum evaluated support: parameter values
-whose implied ceiling exceeds it are treated as infeasible (they lie in the
-\code{alpha} near 1 region where the support explodes). The default \code{NULL}
-sets it to \code{max(500, 10 * max(y))}. A fit whose largest ceiling reaches the
-guard is flagged with a warning and in \verb{$support_binding}, because \code{alpha}
-is then bounded by the guard rather than by the data.}
+\item{max.support}{Guard on the evaluated support. On King's support the pmf
+is summed over the points within 36 log units of its mode, and a
+distribution with more such points than \code{max.support} is treated as
+infeasible (the guard caps the work for very large rates, binding at 500
+where \eqn{\alpha\lambda} exceeds about 880; it does not bind as \code{alpha}
+approaches 1). On the floor support parameter values whose
+implied ceiling exceeds it are infeasible (they lie in the \code{alpha} near 1
+region where that support explodes), and a fit whose largest ceiling
+reaches the guard is flagged with a warning and in \verb{$support_binding},
+because \code{alpha} is then bounded by the guard rather than by the data. The
+default \code{NULL} sets it to \code{max(500, 10 * max(y))}.}
 
 \item{maxit, reltol}{Optimizer controls passed to \code{\link[stats:optim]{stats::optim()}}.}
+
+\item{support}{The CPB's support. \code{"ceiling"} (the default) is King's (1989)
+CPB as Winkelmann, Signorino and King (1995) normalize it, on
+\eqn{0, \ldots, \lceil \lambda_i/(1-\alpha) \rceil}; \code{"floor"} is the
+package's definition before version 0.2.0, on
+\eqn{0, \ldots, \lfloor \lambda_i/(1-\alpha) \rfloor}, kept so that earlier
+results reproduce. The two coincide when the ceiling is an integer.}
 }
 \value{
 An object of class \code{"cpb"}: a list with \code{coefficients}, \code{alpha}, bootstrap
@@ -78,47 +102,88 @@ An object of class \code{"cpb"}: a list with \code{coefficients}, \code{alpha}, 
 original \code{call}.
 }
 \description{
-Fits the underdispersed continuous parameter binomial model of King (1989), in
-which the conditional variance is a fraction of the conditional mean,
-\eqn{\mathrm{Var}(Y\mid x) = \alpha\,\mathrm{E}(Y\mid x)} with
-\eqn{0 < \alpha < 1}, and each observation has an endogenous ceiling
-\eqn{\lambda_i/(1-\alpha)}. A zero-truncated variant (the default) conditions on
+Fits the underdispersed continuous parameter binomial model of King (1989): a
+binomial count with a continuous number of trials, \eqn{\lambda_i/(1-\alpha)},
+and success probability \eqn{1-\alpha}, so that the conditional variance is
+close to a fraction of the conditional mean,
+\eqn{\mathrm{Var}(Y\mid x) \approx \alpha\,\mathrm{E}(Y\mid x)} with
+\eqn{0 < \alpha < 1}, and each observation has an endogenous ceiling,
+\eqn{\lceil \lambda_i/(1-\alpha) \rceil}. A zero-truncated variant (the default) conditions on
 \eqn{Y \ge 1}, appropriate when underdispersion lives among the positive counts of
 an otherwise zero-inflated outcome.
 }
 \details{
-The mean is modelled log-linearly, \eqn{\lambda_i = \exp(x_i'\beta)}. Because the
-support \eqn{0, \ldots, \lfloor \lambda_i/(1-\alpha) \rfloor} depends on the
-parameters, the log-likelihood is discontinuous: whenever a parameter move
-carries an observation's ceiling across an integer its normalizing constant
-jumps, by about \eqn{(1-\alpha)^{k}} at ceiling \eqn{k}. The maximizer is
-found by a deterministic multistart, BFGS from the Poisson solution at each
-value of \code{alpha.start} polished by Nelder-Mead with feasibility-repaired
-restarts, on covariates scaled to unit standard deviation (the coefficients
-are mapped back, so the fit does not depend on the covariates' units), and
-the reported maximum is the maximum of the fit's own profile in \code{alpha}: the
-profile is traced by continuation on both sides of the estimate (the slopes
-re-maximized at each step from the neighbouring solution) until it has
-dropped four log-likelihood units, and a trace point above the multistart's
-value restarts the fit from there. The same trace gives the profile interval
-of \code{\link[=confint.cpb]{confint.cpb()}}. Two parameterizations of the same design (say, treatment
-and sum contrasts) can still settle on different teeth of this surface, with
-log-likelihoods differing by the order of the jumps; unit intercepts belong
-in the fixed-effects estimator \code{\link[=cpb_fe]{cpb_fe()}}, which solves each of them exactly
-(a pooled fit with many dummy columns can stop short of it). The numerical
-Hessian is unreliable on
-such a surface, so inference uses a cold-multistart bootstrap for the
-coefficients (validated to nominal coverage) and a profile-likelihood interval
-for \eqn{\alpha} (see \code{\link[=alpha_confint]{alpha_confint()}}; first-order by default, calibrated
-by parametric bootstrap after \code{\link[=calibrate_alpha]{calibrate_alpha()}}).
+The rate is modeled log-linearly, \eqn{\lambda_i = \exp(x_i'\beta)}. The
+probabilities follow the Katz recursion
+\eqn{P(Y = k+1)/P(Y = k) = (\lambda_i - k(1-\alpha))/(\alpha(k+1))} on the
+support \eqn{0, \ldots, \lceil \lambda_i/(1-\alpha) \rceil}, King's
+normalization as Winkelmann, Signorino and King (1995) give it. The CPB is
+therefore the generalized event count model of \code{\link[=gec]{gec()}} at
+\eqn{\delta = \alpha}, and the two functions return the same fit wherever the
+GEC's estimate of \eqn{\delta} is below one, given the same \code{truncated}
+(\code{cpb()} defaults to the zero-truncated model, \code{gec()} to the untruncated
+one). Where \eqn{\lambda_i/(1-\alpha)}
+is an integer the distribution is the binomial with that many trials, with mean
+\eqn{\lambda_i} and variance \eqn{\alpha\lambda_i}; elsewhere its mean is at
+least \eqn{\lambda_i}. In King's notation \code{alpha} is \eqn{\sigma^2}, the
+variance-to-mean ratio at an integer ceiling; Winkelmann, Signorino and King
+write the ceiling \eqn{\lambda_i/(1-\alpha)} as \eqn{\alpha} and \eqn{1-\alpha}
+as \eqn{p}. Because the support moves with the parameters, the
+log-likelihood is continuous with kinks wherever an observation's ceiling
+crosses an integer, and it tends to the Poisson log-likelihood as
+\eqn{\alpha \to 1}; a fit that reaches that limit (\eqn{\hat\alpha > 0.999})
+warns, and \code{\link[=dispersion_test]{dispersion_test()}} gives it the boundary value of the test. The
+maximizer is found by a deterministic multistart, Nelder-Mead from the
+Poisson solution at \code{alpha.start} and seven further dispersions, the best
+polished by Nelder-Mead with feasibility-repaired restarts and a final BFGS
+pass, on covariates scaled to
+unit standard deviation (the coefficients are mapped back, so the fit does not
+depend on the covariates' units), and the reported maximum is the maximum of
+the fit's own profile in \code{alpha}: the profile is traced by continuation on both
+sides of the estimate (the slopes re-maximized at each step from the
+neighboring solution) until it has dropped four log-likelihood units, and a
+trace point above the multistart's value restarts the fit from there. The same
+trace gives the profile interval of \code{\link[=confint.cpb]{confint.cpb()}}. Unit intercepts belong in
+the fixed-effects estimator \code{\link[=cpb_fe]{cpb_fe()}}, which solves each of them exactly (a
+pooled fit with many dummy columns can stop short of it).
 
-Runtime: a fit with \code{se = "none"} takes a few seconds at 500 rows and about
-fifteen at 2,000 on one core, the nine starts, the profile trace, and the
-scan in \code{alpha} included. The bootstrap
-replicates are maximized by the multistart without the profile trace (about
-a third of a second each at 500 rows), so a replicate can sit on a different
-tooth from the point estimate by the order of the jumps; \code{cores} runs them in
-parallel.
+The likelihood is not regular at the crossings. Just above an integer the
+top support point carries probability proportional to the ceiling's distance
+\eqn{\epsilon} past it, so the information an observation carries about its
+rate grows like \eqn{1/\epsilon} (about \eqn{0.28/\epsilon} for
+\eqn{\log\lambda} at \eqn{\alpha = 0.5} and a ceiling of \eqn{3 + \epsilon},
+about \eqn{1.8/\epsilon} at \eqn{\alpha = 0.3}; King 1989, footnote 7, notes
+that asymptotic normality needs non-integer ceilings). With continuous
+covariates the ceilings' fractional parts are spread and the expected
+information per observation is unbounded, so standard errors from the
+numerical Hessian are unreliable (at small \code{alpha} they fall well below the
+sampling variability of the estimates), and inference uses a
+cold-multistart bootstrap for the coefficients and a profile-likelihood
+interval for \eqn{\alpha}. In simulations from King's CPB at n = 300, the
+bootstrap's 95\% interval for a slope covers 0.91 at alpha 0.3, 0.95 at 0.5
+and 0.94 at 0.7 (0.92 at alpha 0.3 with n = 1,000); on the floor support it
+covers 0.95. The interval for
+\eqn{\alpha} is first-order by default and calibrated by parametric bootstrap
+after \code{\link[=calibrate_alpha]{calibrate_alpha()}} (see \code{\link[=alpha_confint]{alpha_confint()}}).
+
+\code{support = "floor"} gives the package's definition before version 0.2.0, on
+\eqn{0, \ldots, \lfloor \lambda_i/(1-\alpha) \rfloor}, whose mean is at most
+\eqn{\lambda_i}. Its log-likelihood is discontinuous: whenever a parameter move
+carries an observation's ceiling across an integer its normalizing constant
+jumps, by about \eqn{(1-\alpha)^{k}} at ceiling \eqn{k}. The fit then adds a
+scan of the breakpoints in \code{alpha} next to the estimate; two parameterizations
+of the same design (say, treatment and sum contrasts) can settle on different
+teeth of the surface, with log-likelihoods differing by the order of the
+jumps; and ceilings above \code{max.support} are infeasible, so \code{alpha} can be
+bounded by that guard rather than by the data.
+
+Runtime: a fit with \code{se = "none"} takes about a second at 500 rows and four
+at 2,000 on one core, the multistart and the profile trace included (about
+four and fifteen on the floor support).
+The bootstrap replicates are maximized by the multistart without the profile
+trace (about 0.1 seconds each at 500 rows; on the floor support a
+replicate can therefore sit on a different tooth from the point estimate, by
+the order of the jumps); \code{cores} runs them in parallel.
 }
 \examples{
 set.seed(1)
@@ -130,8 +195,15 @@ fit <- cpb(y ~ x, data = d[d$y > 0, ], se = "none")
 summary(fit)
 }
 \references{
-King, G. (1989). Variance specification in event count models.
+King, G. (1989). Variance specification in event count models:
+From restrictive assumptions to a generalized estimator.
 \emph{American Journal of Political Science}, 33(3), 762-784.
+Winkelmann, R., Signorino, C. S. and King, G. (1995). A correction for an
+underdispersed event count probability distribution. \emph{Political
+Analysis}, 5, 215-228.
+King, G. and Roberts, M. E. (2015). How robust standard errors expose
+methodological problems they do not fix, and what to do about it.
+\emph{Political Analysis}, 23(2), 159-179.
 }
 \seealso{
 \code{\link[=ud_screen]{ud_screen()}}, \code{\link[=confint.cpb]{confint.cpb()}}, \code{\link[=predict.cpb]{predict.cpb()}}, \code{\link[=implied_ceiling]{implied_ceiling()}},

@@ -7,11 +7,13 @@
 ## parameters bias of order 1/T. The correction refits the model on the first
 ## and second temporal halves of every unit's series and reports
 ##   theta_jack = 2 * theta_full - (theta_half1 + theta_half2) / 2,
-## which removes the leading 1/T bias term. Validated by the committed
-## fixed-effects bias Monte Carlo (replication/main_paper/main_fe_bias_mc.R):
-## alpha bias -0.153/-0.100/-0.057/-0.033 at T = 6/10/20/40 falls to
-## -0.046/-0.024/-0.013/-0.009. Within each unit, rows are split in the order
-## supplied, which should be temporal order.
+## which removes the leading 1/T bias term. In the package's fixed-effects bias
+## Monte Carlo (150 units, alpha 0.5):
+## on King's support the alpha bias -0.122/-0.071/-0.036/-0.018 at
+## T = 6/10/20/40 falls to +0.008/+0.004/+0.000/-0.001; on the floor support
+## -0.153/-0.100/-0.057/-0.033 falls to -0.046/-0.024/-0.013/-0.009. Within each
+## unit, rows are split in time order (the fits' `time` argument, which the
+## correction requires).
 ##
 ## VALIDITY GATE. The jackknife identity requires the two half-panels to
 ## estimate the SAME pseudo-true parameter, differing only through the 1/T
@@ -39,11 +41,25 @@
 ## R1 (corrected dispersion outside its feasible space), R2, or R2b. It WARNS
 ## (but proceeds) when the implied correction exceeds 0.15 * scale and when the
 ## median panel length is below 6. KAPPA = 2.5 and the R2b threshold (p < .01)
-## are calibrated by Monte Carlo (verification/jackknife_gate_mc.R): stationary
-## panels must essentially never refuse; regime-change panels must refuse; and
+## are calibrated by Monte Carlo: stationary
+## panels should rarely refuse (on King's support 9 to 13 percent do, on the
+## floor support 5.5 to 9); regime-change panels must refuse (98.5 percent); and
 ## on trending panels the corrections that survive must not be worse than the
-## uncorrected fit. The placebo splits cost ten extra half-sample fits.
+## uncorrected fit (every trending panel refuses). The placebo splits cost ten
+## extra half-sample fits.
 ## ---------------------------------------------------------------------------
+
+## A bootstrap replicate's refit runs inside .ud_replicate(). The validity gate is a check on the data, made once
+## on the original fit, so a replicate applies the correction without it (its standard errors then carry the
+## correction's variance). A replicate whose half fits fail fails (a missing replicate) instead of falling back to
+## the uncorrected fit; one whose corrected dispersion leaves its space is held at the space's edge, since dropping
+## it would censor one tail of the replicates. The floor support keeps its earlier replicates (cpb_fe() passes
+## `replicate = FALSE` there).
+.ud_replicate <- function(expr) {
+  op <- options(underdisp.jackknife_replicate = TRUE); on.exit(options(op))
+  expr
+}
+.fe_jack_replicate <- function() isTRUE(getOption("underdisp.jackknife_replicate"))
 
 ## refit(half_data) returns the c(coefficients, dispersion) vector of a half
 ## fit (dispersion LAST), or NULL on failure. `resid` and `torder` are the full
@@ -51,10 +67,19 @@
 ## Returns list(par = corrected vector, warn = character()) on success, or
 ## list(refused = "<reason>").
 .fe_jackknife <- function(data_est, unit, refit, full_par, resid, torder,
-                          disp_lower = 1e-3, disp_upper = Inf, kappa = 2.5) {
+                          disp_lower = 1e-3, disp_upper = Inf, kappa = 2.5, replicate = .fe_jack_replicate()) {
   iu  <- as.integer(factor(unit))
   ord <- stats::ave(seq_along(iu), iu, FUN = seq_along)
   len <- stats::ave(seq_along(iu), iu, FUN = length)
+  if (replicate) {                            # a bootstrap replicate: the correction without the gate
+    h <- ord <= len / 2; k <- length(full_par)
+    q1 <- refit(data_est[h, , drop = FALSE]); q2 <- refit(data_est[!h, , drop = FALSE])
+    if (is.null(q1) || is.null(q2)) return(list(refused = "a half-panel refit failed"))
+    jk <- 2 * full_par - (q1 + q2) / 2
+    eps <- 1e-6 * max(1, abs(disp_lower))
+    jk[k] <- min(max(jk[k], disp_lower + eps), if (is.finite(disp_upper)) disp_upper - eps else Inf)
+    return(list(par = jk, warn = character()))
+  }
   warn <- character()
   if (stats::median(tabulate(iu)) < 6)
     warn <- c(warn, "median panel length is below 6; half-panel fits are short and the correction may be unreliable")

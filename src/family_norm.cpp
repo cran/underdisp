@@ -3,6 +3,9 @@
 // constant dispersion, one pass per observation. The terms and the support rule
 // mirror R/count_families.R (.dp_lterm, .gp_lterm, .grow_support) exactly; the
 // R functions delegate here so that a fit does not loop over observations in R.
+// A sum the cap stops before its last term has fallen 40 log units below the
+// peak (a mean of order 1e5 or more) is refused: its row is NA, and a likelihood
+// treats the point as infeasible rather than using the understated normalizer.
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
@@ -58,10 +61,13 @@ NumericMatrix dp_norm_cpp(NumericVector mu, double theta, int cap) {
     double mx = -1e300;
     std::vector<double> lt(K + 1);
     for (int k = 0; k <= K; k++) { lt[k] = dp_lterm(k, m, theta, lmu, lth, lg[k]); if (lt[k] > mx) mx = lt[k]; }
+    if (K >= cap && lt[K] >= mx - 40.0) { out(i, 0) = NA_REAL; out(i, 1) = NA_REAL; out(i, 2) = NA_REAL; continue; }
     double s = 0.0, s1 = 0.0, s2 = 0.0;
-    for (int k = 0; k <= K; k++) { double w = std::exp(lt[k] - mx); s += w; s1 += k * w; s2 += (double)k * k * w; }
+    for (int k = 0; k <= K; k++) { double w = std::exp(lt[k] - mx); s += w; s1 += k * w; }
     double e1 = s1 / s;
-    out(i, 0) = mx + std::log(s); out(i, 1) = e1; out(i, 2) = s2 / s - e1 * e1;
+    // the variance about the mean in a second pass (a one-pass E[Y^2] - E[Y]^2 cancels at large theta)
+    for (int k = 0; k <= K; k++) { double d = k - e1; s2 += d * d * std::exp(lt[k] - mx); }
+    out(i, 0) = mx + std::log(s); out(i, 1) = e1; out(i, 2) = s2 / s;
   }
   return out;
 }
@@ -97,24 +103,30 @@ static int gp_kmax(double mu, double lambda, int cap) {
 }
 
 // n x 3: log Z, mean, variance of the generalized Poisson at each mu (for
-// lambda >= 0 the moments are the closed forms mu and mu/(1-lambda)^2, as in R)
+// lambda >= 0 the closed forms 0, mu and mu/(1-lambda)^2, as in R)
 // [[Rcpp::export]]
 NumericMatrix gp_norm_cpp(NumericVector mu, double lambda, int cap) {
   int n = mu.size(); NumericMatrix out(n, 3);
   for (int i = 0; i < n; i++) {
     double m = mu[i];
     if (!(m > 0.0) || !R_finite(m) || lambda >= 1.0) { out(i, 0) = NA_REAL; out(i, 1) = NA_REAL; out(i, 2) = NA_REAL; continue; }
+    // for 0 <= lambda < 1 the pmf sums to one over the non-negative integers (Consul and Jain 1973), so the
+    // normalizer is 1 exactly; a sum over the capped support would understate it where the tail is long
+    // (lambda near 1, or a mean of order 1e5)
+    if (lambda >= 0.0) { out(i, 0) = 0.0; out(i, 1) = m; out(i, 2) = m / ((1.0 - lambda) * (1.0 - lambda)); continue; }
     int K = std::min(gp_kmax(m, lambda, cap), cap);
     const std::vector<double>& lg = lgam_tab(K);
     double mx = -1e300;
     std::vector<double> lt(K + 1);
     for (int k = 0; k <= K; k++) { lt[k] = gp_lterm(k, m, lambda, lg[k]); if (lt[k] > mx) mx = lt[k]; }
+    // the cap, not the finite support end (a support that ends at or below the cap is summed whole)
+    bool ends = std::ceil(m * (1.0 - lambda) / (-lambda)) - 1.0 <= (double)cap;
+    if (!ends && K >= cap && R_finite(lt[K]) && lt[K] >= mx - 40.0) { out(i, 0) = NA_REAL; out(i, 1) = NA_REAL; out(i, 2) = NA_REAL; continue; }
     double s = 0.0, s1 = 0.0, s2 = 0.0;
-    for (int k = 0; k <= K; k++) { if (!R_finite(lt[k])) continue; double w = std::exp(lt[k] - mx); s += w; s1 += k * w; s2 += (double)k * k * w; }
+    for (int k = 0; k <= K; k++) { if (!R_finite(lt[k])) continue; double w = std::exp(lt[k] - mx); s += w; s1 += k * w; }
     double e1 = s1 / s;
-    out(i, 0) = mx + std::log(s);
-    if (lambda >= 0.0) { out(i, 1) = m; out(i, 2) = m / ((1.0 - lambda) * (1.0 - lambda)); }
-    else { out(i, 1) = e1; out(i, 2) = s2 / s - e1 * e1; }
+    for (int k = 0; k <= K; k++) { if (!R_finite(lt[k])) continue; double d = k - e1; s2 += d * d * std::exp(lt[k] - mx); }
+    out(i, 0) = mx + std::log(s); out(i, 1) = e1; out(i, 2) = s2 / s;
   }
   return out;
 }

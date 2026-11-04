@@ -10,6 +10,9 @@
   type = c("response", "link", "prob"),
   at = NULL,
   offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
@@ -27,10 +30,17 @@ conditional mean E(Y | Y > 0)), \code{"link"} (the linear predictor), or
 \item{offset}{Optional offset (log scale) for \code{newdata}: a numeric vector or a
 column name in \code{newdata}.}
 
+\item{se.fit, interval, level}{Standard errors (\code{se.fit = TRUE}) and a
+\code{level} confidence interval (\code{interval = "confidence"}) of the predicted
+quantity at the rows of \code{newdata}; see \code{\link[=predict.cpb]{predict.cpb()}}.}
+
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predictions from a matched count-family fit

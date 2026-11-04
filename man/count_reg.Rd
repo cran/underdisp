@@ -2,13 +2,13 @@
 % Please edit documentation in R/glm_families.R
 \name{count_reg}
 \alias{count_reg}
-\title{Matched count regressions: Poisson, negative binomial, COM-Poisson, generalized Poisson, gamma-count, double Poisson}
+\title{Matched count regressions: Poisson, negative binomial, COM-Poisson, generalized Poisson, gamma-count, double Poisson, hyper-Poisson, exponentially weighted Poisson}
 \usage{
 count_reg(
   formula,
   data,
   family = c("poisson", "negbin", "compois", "mpcmp", "genpois", "gammacount",
-    "doublepois"),
+    "doublepois", "hyperpois", "ewp3", "ewp2"),
   truncated = FALSE,
   fe = NULL,
   offset = NULL,
@@ -23,7 +23,8 @@ count_reg(
 \item{data}{A data frame.}
 
 \item{family}{One of \code{"poisson"}, \code{"negbin"}, \code{"compois"}, \code{"mpcmp"},
-\code{"genpois"}, \code{"gammacount"}, \code{"doublepois"} (see Families).}
+\code{"genpois"}, \code{"gammacount"}, \code{"doublepois"}, \code{"hyperpois"}, \code{"ewp3"},
+\code{"ewp2"} (see Families).}
 
 \item{truncated}{Logical; if \code{TRUE}, fit the zero-truncated form (requires all
 \code{Y >= 1}), the count analogue of the CPB's zero-truncated default.}
@@ -47,7 +48,22 @@ for \code{se = "robust"} or \code{se = "cluster"}.}
 
 \item{se}{Standard errors: \code{"analytic"} (inverse information, default),
 \code{"robust"} (heteroskedasticity-consistent sandwich), \code{"cluster"}
-(cluster-robust; needs \code{cluster}), or \code{"none"}.}
+(cluster-robust; needs \code{cluster}), or \code{"none"}. A robust or clustered
+covariance protects inference about the parameters of the best-fitting
+member of the family; the quantities that rest on the whole distribution
+(predicted probabilities, the mean of a truncated or two-part model) are
+still those of the fitted family. King and Roberts (2015) read a large gap
+between the robust and the model-based standard errors as evidence of a
+misspecification to fix; \code{\link[=summary]{summary()}} reports their ratio. For the Poisson
+the coefficients are consistent for the conditional mean whenever
+\eqn{E(Y \mid x) = \exp(x'\beta)}, whatever the distribution
+(Gourieroux, Monfort and Trognon 1984; Wooldridge 1999), and the robust or
+clustered errors are then valid for them: the gap shows that the variance
+is not the Poisson's, not that the mean is wrong. That makes the robust
+Poisson the benchmark for mean effects, against which the families' own
+mean effects (\code{\link[=ame]{ame()}}) can be compared; a family that fits the
+distribution better estimates them consistently only if it is the true
+model.}
 
 \item{cluster}{Optional cluster identifier (a column name in \code{data} or a
 vector aligned to its rows) for \code{se = "cluster"}; supplying it selects
@@ -57,8 +73,9 @@ vector aligned to its rows) for \code{se = "cluster"}; supplying it selects
 An object of class \code{"count_reg"}. The component \verb{$theta} holds the
 dispersion parameter on its natural scale (the negative-binomial size, the
 COM-Poisson \eqn{\nu}, the generalized-Poisson \eqn{\lambda}, the
-gamma-count \eqn{\alpha}, the double-Poisson \eqn{\theta}; \code{NA} for the
-Poisson); \verb{$fitted.values} and \verb{$residuals} are on the mean scale (the
+gamma-count \eqn{\alpha}, the double-Poisson \eqn{\theta}, the
+hyper-Poisson \eqn{\gamma}, the EWP's \eqn{(\beta_1, \beta_2)} or
+\eqn{\beta}; \code{NA} for the Poisson); \verb{$fitted.values} and \verb{$residuals} are on the mean scale (the
 conditional mean E(Y | Y >= 1) for a zero-truncated fit), as \code{fitted()} and
 \code{residuals()} return them, and \verb{$mu} is the family's natural parameter
 \verb{exp(offset + x'b)}.
@@ -87,16 +104,37 @@ mean); \verb{$theta} is the dispersion \eqn{\nu} (\eqn{\nu > 1} underdispersed,
 \eqn{\log\mathrm{E}(Y) = x'\beta}, with the same dispersion \eqn{\nu}; the
 coefficients are effects on the log mean and rate ratios are exact.
 \item \code{"genpois"}: the Consul--Jain generalized Poisson with constant dispersion
-\eqn{\lambda \in (-1, 1)} and mean \eqn{\mu = \exp(x'\beta)}, so
-\eqn{\mathrm{Var}/\mathrm{Mean} = 1/(1-\lambda)^2}; \eqn{\lambda < 0} is
-underdispersion, on a finite support that the pmf is renormalized over
-(see \link{genpois-distribution}).
+\eqn{\lambda \in (-1, 1)} and \eqn{\mu = \exp(x'\beta)}, the mean for
+\eqn{\lambda \ge 0}, with \eqn{\mathrm{Var}/\mathrm{Mean} = 1/(1-\lambda)^2};
+\eqn{\lambda < 0} is underdispersion, on a finite support that the pmf is
+renormalized over, and the mean then departs from \eqn{\mu} where that
+support is short (small \eqn{\mu} at strong underdispersion: about
+\eqn{1.19\mu} at \eqn{\lambda = -0.6}, \eqn{\mu = 0.5}); the exact mean is
+reported (see \link{genpois-distribution}).
 \item \code{"gammacount"}: Winkelmann's (1995) gamma-count renewal-process model,
 underdispersed when the waiting times between events are more regular than
 exponential (\eqn{\alpha > 1}); \eqn{\exp(x'\beta)} is the long-run event
 rate and the exact mean is reported (see \link{gammacount-distribution}).
 \item \code{"doublepois"}: Efron's (1986) double Poisson with the exact normalizing
 constant, \eqn{\theta > 1} underdispersed (see \link{doublepois-distribution}).
+\item \code{"hyperpois"}: the hyper-Poisson of Bardwell and Crow (1964) in the mean
+parameterization of \enc{Sáez-Castillo}{Saez-Castillo} and
+\enc{Conde-Sánchez}{Conde-Sanchez} (2013), mean \eqn{\mu = \exp(x'\beta)},
+\eqn{\gamma < 1} underdispersed, with one \eqn{\gamma} for all
+observations: their constant-dispersion model hP\eqn{(\mu_i, \gamma)}. Their
+model with covariates in the dispersion, hP\eqn{(\mu_i, \gamma_i)}, is fit by
+\code{DGLMExtPois::glm.hP()}. Its underdispersion is bounded: as
+\eqn{\gamma \to 0} the variance falls only to \eqn{\mu - 1} for
+\eqn{\mu \ge 1} and \eqn{\mu(1 - \mu)} below, so Var/Mean is at least
+0.5 at a mean of 2 and 0.9 at 10 (see \link{hyperpois-distribution}).
+\item \code{"ewp3"} (alias \code{"ewp"}): the three-parameter exponentially weighted
+Poisson of Ridout and Besbeas (2004), a Poisson with centrality
+\eqn{\lambda = \exp(x'\beta)} reweighted by a two-sided exponential in the
+distance from it; \verb{$theta} holds the two dispersion parameters
+\eqn{(\beta_1, \beta_2)}, one per tail, positive values underdispersed
+(see \link{ewp-distribution}). \code{"ewp2"} is its two-parameter form,
+\eqn{\beta_1 = \beta_2 = \beta}. The coefficients are effects on the log
+centrality, not the log mean; the exact mean is reported.
 }
 
 The Poisson is the equidispersed member of every family, so
@@ -106,10 +144,16 @@ against the data.
 
 Runtime: the Poisson, negative binomial, gamma-count, and double Poisson and
 generalized Poisson families fit in under a second at a few hundred rows; the
-COM-Poisson families evaluate a normalizing sum per observation (and the
-mean parameterization solves a root per observation), so they take seconds
-at a few hundred rows and minutes at several thousand; \code{se = "robust"} and
-\code{"cluster"} add numerical scores at the same cost per parameter.
+COM-Poisson families, the hyper-Poisson and the EWP evaluate a normalizing
+sum per observation (and the mean parameterizations solve a root per
+observation), so they take seconds at a few hundred rows and minutes at
+several thousand. The EWP's sum lengthens with a heavy upper tail (a
+negative upper weight), and its standard errors sum over each observation's
+support. Rows that repeat (the same count, covariates and offset) are
+evaluated once with their total weight, so an intercept-only or
+few-category design costs as many evaluations as it has distinct rows.
+\code{se = "robust"} and \code{"cluster"} add numerical scores at the same cost per
+parameter.
 }
 
 \examples{
@@ -121,6 +165,9 @@ m
 compare_models(poisson = count_reg(y ~ x, d, family = "poisson"), gammacount = m)
 }
 \references{
+King, G. and Roberts, M. E. (2015). How robust standard errors
+expose methodological problems they do not fix, and what to do about it.
+\emph{Political Analysis}, 23(2), 159-179.
 Huang, A. (2017). Mean-parametrized Conway--Maxwell--Poisson
 regression models for dispersed counts. \emph{Statistical Modelling},
 17(6), 359-380. Winkelmann, R. (1995). Duration dependence and dispersion
@@ -129,7 +176,24 @@ in count-data models. \emph{Journal of Business & Economic Statistics},
 use in generalized linear regression. \emph{Journal of the American
 Statistical Association}, 81(395), 709-721. Consul, P. C. and Famoye, F.
 (1992). Generalized Poisson regression model. \emph{Communications in
-Statistics -- Theory and Methods}, 21(1), 89-109.
+Statistics -- Theory and Methods}, 21(1), 89-109. Shmueli, G., Minka, T.
+P., Kadane, J. B., Borle, S. and Boatwright, P. (2005). A useful
+distribution for fitting discrete data: revival of the Conway--Maxwell--Poisson
+distribution. \emph{Journal of the Royal Statistical Society C}, 54(1),
+127-142. Sellers, K. F. and Shmueli, G. (2010). A flexible regression model
+for count data. \emph{Annals of Applied Statistics}, 4(2), 943-961.
+Bardwell, G. E. and Crow, E. L. (1964). A two-parameter family of
+hyper-Poisson distributions. \emph{Journal of the American Statistical
+Association}, 59(305), 133-141. \enc{Sáez-Castillo}{Saez-Castillo}, A. J.
+and \enc{Conde-Sánchez}{Conde-Sanchez}, A. (2013). A hyper-Poisson
+regression model for overdispersed and underdispersed count data.
+\emph{Computational Statistics & Data Analysis}, 61, 148-157. Ridout, M.
+S. and Besbeas, P. (2004). An empirical model for underdispersed count
+data. \emph{Statistical Modelling}, 4(1), 77-89. Gourieroux, C., Monfort,
+A. and Trognon, A. (1984). Pseudo maximum likelihood methods: applications
+to Poisson models. \emph{Econometrica}, 52(3), 701-720. Wooldridge, J. M.
+(1999). Distribution-free estimation of some nonlinear panel data models.
+\emph{Journal of Econometrics}, 90(1), 77-97.
 }
 \seealso{
 \code{\link[=cpb]{cpb()}}, \code{\link[=gec]{gec()}}, \code{\link[=compare_models]{compare_models()}}, \code{\link[=dispersion_test]{dispersion_test()}},

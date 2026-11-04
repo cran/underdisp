@@ -7,25 +7,54 @@
 \alias{qcpb}
 \title{Continuous parameter binomial distribution functions}
 \usage{
-dcpb(x, lambda, alpha, truncated = FALSE, log = FALSE)
+dcpb(
+  x,
+  lambda,
+  alpha,
+  truncated = FALSE,
+  log = FALSE,
+  support = c("ceiling", "floor")
+)
 
-pcpb(q, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE)
+pcpb(
+  q,
+  lambda,
+  alpha,
+  truncated = FALSE,
+  lower.tail = TRUE,
+  log.p = FALSE,
+  support = c("ceiling", "floor")
+)
 
-qcpb(p, lambda, alpha, truncated = FALSE, lower.tail = TRUE, log.p = FALSE)
+qcpb(
+  p,
+  lambda,
+  alpha,
+  truncated = FALSE,
+  lower.tail = TRUE,
+  log.p = FALSE,
+  support = c("ceiling", "floor")
+)
 }
 \arguments{
 \item{x, q}{Vector of quantiles (non-negative integers).}
 
-\item{lambda}{Mean parameter (scalar or vector, recycled).}
+\item{lambda}{Rate parameter (scalar or vector, recycled). It is the mean
+where \code{lambda / (1 - alpha)} is an integer; otherwise the mean lies above it
+on King's support and below it on the floor support.}
 
 \item{alpha}{Shape parameter in (0, 1).}
 
-\item{truncated}{If \code{TRUE}, use the zero-truncated CPB. Where the implied
-ceiling \code{lambda / (1 - alpha)} is below 1 the CPB puts all its mass on 0,
-and its zero-truncated form is the point mass at 1, the zero-truncated
-distribution for every ceiling in [1, 2).}
+\item{truncated}{If \code{TRUE}, use the zero-truncated CPB. On the floor support,
+where the implied ceiling \code{lambda / (1 - alpha)} is below 1 the CPB puts all
+its mass on 0, and its zero-truncated form is the point mass at 1, the
+zero-truncated distribution for every ceiling in [1, 2); King's support
+always contains 1.}
 
 \item{log, log.p}{If \code{TRUE}, probabilities are given as log.}
+
+\item{support}{The CPB's support, \code{"ceiling"} (King's CPB, the default) or
+\code{"floor"}; see \code{\link[=cpb]{cpb()}}.}
 
 \item{lower.tail}{If \code{TRUE} (default), probabilities are \eqn{P(X \le x)}.}
 
@@ -37,8 +66,9 @@ distribution for every ceiling in [1, 2).}
 \description{
 Density, distribution function, and quantile function for the continuous
 parameter binomial (CPB), and its zero-truncated form. The CPB has a hard
-ceiling at \eqn{\lfloor \lambda/(1-\alpha) \rfloor}; probability above it is
-zero. Complements the simulator \code{\link[=rcpb]{rcpb()}}.
+ceiling: King's CPB (the default) puts no probability above
+\eqn{\lceil \lambda/(1-\alpha) \rceil}, the floor support (\code{support = "floor"}, the definition before version 0.2.0) none above
+\eqn{\lfloor \lambda/(1-\alpha) \rfloor}. Complements the simulator \code{\link[=rcpb]{rcpb()}}.
 }
 \examples{
 dcpb(0:5, lambda = 3, alpha = 0.5)

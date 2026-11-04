@@ -42,13 +42,24 @@ every \code{irr()} method: columns \code{term}, \code{equation} (\code{"count"},
 \code{"participation"} for a hurdle's binary stage, or \code{"inflation"} for a
 zero-inflated model's structural-zero stage; the two point in opposite
 directions, an odds ratio above one raising P(Y > 0) in the first and
-P(structural zero) in the second), \code{ratio} (\code{"IRR"} or \code{"OR"}),
-\code{estimate}, \code{lower}, \code{upper}, and \code{method} (the interval source; \code{"none"}
-with \code{NA} bounds when no covariance is available). Two-part models stack
-both equations. The \code{IRR} rows are ratios of the rate parameter
-\eqn{\exp(\beta)}; for the CPB and the underdispersed GEC the ratio of
-fitted means differs from it by the support renormalization, and
-\code{\link[=first_difference]{first_difference()}} reports the exact mean contrast.
+P(structural zero) in the second), \code{ratio} (\code{"IRR"}, \code{"OR"}, or the
+parameter's ratio named below), \code{estimate}, \code{lower}, \code{upper}, and \code{method}
+(the interval source; \code{"none"} with \code{NA} bounds when no covariance is
+available). Two-part models stack both equations. The count rows are
+\eqn{\exp(\beta)}, the ratio of the family's natural parameter. That is a
+ratio of means for the Poisson, the negative binomial, the
+mean-parameterized COM-Poisson (\code{"mpcmp"}), the hyper-Poisson, and the
+generalized Poisson with \eqn{\lambda \ge 0} (\code{"IRR"}). It is not for the
+others, whose rows name what it is, with a message: the rate-parameterized
+COM-Poisson (\code{"compois"}, \code{"lambda ratio"}; its mean moves roughly as the
+rate to the power \eqn{1/\nu}, so that \eqn{\exp(\beta)} is roughly the
+mean ratio to the power \eqn{\nu}), the EWP (\code{"centrality ratio"}), the
+gamma count (\code{"long-run rate ratio"}), the double Poisson
+(\code{"location ratio"}) and the generalized Poisson below zero
+(\code{"mu ratio"}). The CPB and the underdispersed GEC keep \code{"IRR"}, a ratio of
+their rate, which their mean follows only approximately (the rate
+renormalized over a finite support). For all of these, \code{\link[=first_difference]{first_difference()}}
+and \code{\link[=ame]{ame()}} report the exact mean contrast.
 }
 \description{
 Rate ratios (\code{exp} of the count/intensity coefficients, column \code{IRR}) and, for

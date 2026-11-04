@@ -8,21 +8,38 @@
   object,
   newdata = NULL,
   type = c("response", "participation", "intensity"),
+  offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
 \arguments{
 \item{object}{A \code{"hurdle_gec"} object.}
 
-\item{newdata}{Optional covariate profiles (intensity and participation).}
+\item{newdata}{Optional covariate profiles (intensity and participation). A
+\code{part_fe} unit the fit has not seen, or every row when that column is
+absent, enters at the reference unit, and a unit at a limit at that limit
+(see \code{part_fe} in \code{\link[=hurdle_gec]{hurdle_gec()}}).}
 
 \item{type}{\code{"response"} (marginal E(Y)), \code{"participation"} (P(Y>0)), or
 \code{"intensity"} (E(Y | Y>0)).}
 
+\item{offset}{Optional offset (log scale) of the intensity for the \code{newdata}
+rows; see \code{\link[=predict.cpb]{predict.cpb()}}.}
+
+\item{se.fit, interval, level}{Standard errors (\code{se.fit = TRUE}) and a
+\code{level} confidence interval (\code{interval = "confidence"}) of the predicted
+quantity at the rows of \code{newdata}; see \code{\link[=predict.cpb]{predict.cpb()}}.}
+
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predict from a hurdle-GEC fit

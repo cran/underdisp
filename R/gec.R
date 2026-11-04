@@ -27,12 +27,14 @@
 #' Fits King's generalized event count model, a Katz-family count regression
 #' whose single dispersion parameter `delta` (the variance-to-mean ratio) is
 #' estimated freely and spans underdispersion (`delta < 1`, a finite-support
-#' member; the continuous parameter binomial is this cell), equidispersion
-#' (`delta = 1`, Poisson), and overdispersion (`delta > 1`, the negative
-#' binomial). Unlike [cpb()], which fixes the direction of dispersion to
-#' under, `gec()` lets the data choose. The Katz recursion delivers exact first
-#' and second moments---the Winkelmann--Signorino--King correction realized
-#' directly on an unbounded support---and the likelihood is evaluated in C++.
+#' member, the continuous parameter binomial of [cpb()] at `alpha = delta`),
+#' equidispersion (`delta = 1`, Poisson), and overdispersion (`delta > 1`, the
+#' negative binomial). Unlike [cpb()], which fixes the direction of dispersion to
+#' under, `gec()` lets the data choose; wherever its estimate of `delta` is below
+#' one the two return the same fit. The Katz recursion delivers exact first
+#' and second moments, summed over the support (finite for `delta < 1`, where
+#' they are the correction of Winkelmann, Signorino and King), and the
+#' likelihood is evaluated in C++.
 #' For `delta < 1` the support is finite and the renormalized distribution's
 #' mean and variance equal `exp(x'b)` and `delta * exp(x'b)` only when
 #' `exp(x'b)/(1 - delta)` is an integer, so `exp(x'b)` is the rate parameter of
@@ -55,7 +57,10 @@
 #' @param weights Optional frequency weights (a numeric vector or a column name);
 #'   see [cpb()].
 #' @param cores Worker processes for the bootstrap; see [cpb()].
-#' @param max.support Guard on the maximum evaluated support.
+#' @param max.support Guard on the evaluated support: the GEC's pmf is evaluated
+#'   up to that many points (on an overdispersed fit, the guard binds where the
+#'   tail beyond it carries mass; see [dgec()]). The default `NULL` sets it to
+#'   `max(500, 10 * max(y))`, as for [cpb()].
 #' @param maxit,reltol Optimizer controls.
 #' @return An object of class `"gec"` with `coefficients`, `delta` (the estimated
 #'   dispersion), `loglik`, bootstrap standard errors, and bookkeeping.
@@ -66,10 +71,10 @@
 #' @seealso [cpb()], [compare_dispersion()], [dispersion_test()]
 #' @export
 gec <- function(formula, data, truncated = FALSE, se = c("none", "bootstrap"), B = 500, cluster = NULL,
-                offset = NULL, weights = NULL, cores = 1L, max.support = 500, maxit = 20000, reltol = 1e-8) {
+                offset = NULL, weights = NULL, cores = 1L, max.support = NULL, maxit = 20000, reltol = 1e-8) {
   .ud_no_formula_offset(formula)
   se <- match.arg(se); cl <- match.call()
-  .ud_check_whole(max.support, "max.support")
+  .ud_check_whole(max.support, "max.support", null_ok = TRUE)
   if (se == "bootstrap") .ud_check_whole(B, "B", lower = 2)
   mf <- stats::model.frame(formula, data, na.action = stats::na.omit, drop.unused.levels = TRUE)
   Y  <- stats::model.response(mf); X <- stats::model.matrix(formula, mf)
@@ -81,6 +86,7 @@ gec <- function(formula, data, truncated = FALSE, se = c("none", "bootstrap"), B
   if (truncated && any(Y < 1)) stop("truncated = TRUE requires all Y >= 1.")
   Y <- as.integer(Y)
   .ud_rank_check(X)
+  if (is.null(max.support)) max.support <- max(500L, 10L * max(Y))
   off <- rep_len(0, n)                                          # log-scale exposure offset
   if (!is.null(offset)) {
     ov <- if (is.character(offset) && length(offset) == 1L) data[[offset]] else offset
@@ -122,6 +128,7 @@ gec <- function(formula, data, truncated = FALSE, se = c("none", "bootstrap"), B
     }
     if (!is.null(best)) {
       best <- .ud_nm_polish(best, function(par) objf(par, Xs, Ym, om, wm), maxit, reltol)
+      best <- .ud_bfgs_pass(best, function(par) objf(par, Xs, Ym, om, wm))
       best$par[seq_len(p)] <- best$par[seq_len(p)] / s
     }
     best
@@ -138,29 +145,19 @@ gec <- function(formula, data, truncated = FALSE, se = c("none", "bootstrap"), B
 
   se.beta <- setNames(rep(NA_real_, p), colnames(X)); se.delta <- NA_real_; boot <- NULL; ci.beta <- NULL
   if (se == "bootstrap") {
-    if (!is.null(clid)) .ud_cluster_guard(clid)
-    grp <- if (!is.null(clid)) split(seq_len(n), clid) else NULL
-    one <- function(b) {
-      idx <- if (is.null(grp)) sample.int(n, n, replace = TRUE)
-             else unlist(grp[sample.int(length(grp), length(grp), replace = TRUE)], use.names = FALSE)
+    boot <- .ud_boot(n, clid, function(idx, blk) {
       fb <- fitone(X[idx, , drop = FALSE], Y[idx], off[idx], wv[idx])
-      if (!is.null(fb)) c(fb$par[1:p], exp(fb$par[p + 1])) else rep(NA_real_, p + 1L)
-    }
-    boot <- do.call(rbind, .ud_lapply(seq_len(B), one, cores))
-    ok <- boot[stats::complete.cases(boot), , drop = FALSE]
-    if (nrow(ok) >= 2) {
-      se.beta  <- setNames(apply(ok[, 1:p, drop = FALSE], 2, stats::sd), colnames(X))
-      se.delta <- stats::sd(ok[, p + 1])
-      ci.beta  <- t(apply(ok[, 1:p, drop = FALSE], 2, stats::quantile, c(.025, .975)))
-      rownames(ci.beta) <- colnames(X)
-    } else warning("Too few bootstrap resamples converged for stable inference.")
-    attr(boot, "nboot_ok") <- nrow(ok)
-    if (nrow(ok) < B / 2) warning(sprintf("only %d of %d bootstrap replicates converged; the standard errors rest on the survivors.", nrow(ok), B), call. = FALSE)
+      if (!is.null(fb) && fb$convergence == 0) c(fb$par[1:p], exp(fb$par[p + 1])) else NULL
+    }, c(colnames(X), "delta"), B, cores, label = if (is.null(clid)) "obs" else .ud_cluster_label(cluster))
+    bs <- .ud_boot_stats(boot, colnames(X), beta)
+    se.beta <- bs$se; ci.beta <- bs$ci
+    if (!is.null(bs$vcov)) se.delta <- stats::sd(boot[stats::complete.cases(boot), "delta"])
   }
 
   structure(list(coefficients = beta, delta = delta, dispersion = delta, loglik = loglik,
                  se.beta = se.beta, se.delta = se.delta, boot = boot, ci.beta = ci.beta,
                  fitted.values = fitted, linear.predictors = as.numeric(off + X %*% beta), offset = off,
+                 offset_name = .ud_offset_name(offset),
                  weights = w, nobs_weighted = if (is.null(w)) n else sum(w),
                  n = n, df = p + 1, p = p, se.type = se, clustered = !is.null(clid),
                  converged = fit$convergence == 0,
@@ -225,11 +222,9 @@ fitted.gec <- function(object, ...) object$fitted.values
 #' @method vcov gec
 #' @export
 vcov.gec <- function(object, ...) {
-  if (is.null(object$boot)) return(NULL)                        # no bootstrap requested
-  p  <- length(object$coefficients)                            # covariate block (works for gec AND gec_fe)
-  ok <- object$boot[stats::complete.cases(object$boot), 1:p, drop = FALSE]
-  if (nrow(ok) < 2L) return(NULL)
-  v <- stats::cov(ok); dimnames(v) <- list(names(object$coefficients), names(object$coefficients)); v
+  ok <- .ud_draws(object, names(object$coefficients))          # the coefficient draws (gec and gec_fe)
+  if (is.null(ok)) return(NULL)                                # no bootstrap requested
+  stats::cov(ok)
 }
 
 #' Predictions from a generalized event count fit
@@ -239,15 +234,25 @@ vcov.gec <- function(object, ...) {
 #' @param type `"response"` (the mean), `"link"` (the log mean), or `"prob"`
 #'   (the probability of the count `at`).
 #' @param at Count value(s) for `type = "prob"`.
-#' @param offset Optional offset (log scale) for the count component when
-#'   predicting on `newdata`; a numeric vector or a column name in `newdata`.
+#' @param offset Optional offset (log scale) for the `newdata` rows: a numeric
+#'   vector or a column name in `newdata`; by default the fit's own offset column
+#'   is read from `newdata` (see [predict.cpb()]).
+#' @param se.fit,interval,level Standard errors (`se.fit = TRUE`) and a
+#'   `level` confidence interval (`interval = "confidence"`) of the predicted
+#'   quantity at the rows of `newdata`; see [predict.cpb()].
 #' @param ... Unused.
-#' @return A numeric vector.
+#' @return A numeric vector. With `interval = "confidence"`, a matrix with
+#'   columns `fit`, `lwr` and `upr`; with `se.fit = TRUE`, a list of `fit` (the
+#'   vector or the matrix), `se.fit` and `method` (each row's interval source).
+#'   Without `se.fit`, the source is the attribute `method`.
 #' @method predict gec
 #' @export
 predict.gec <- function(object, newdata = NULL, type = c("response", "link", "prob"), at = NULL,
-                        offset = NULL, ...) {
+                        offset = NULL, se.fit = FALSE, interval = c("none", "confidence"),
+                        level = 0.95, ...) {
   type <- match.arg(type)
+  if (isTRUE(se.fit) || match.arg(interval) != "none")
+    return(.ud_predict_ci(object, newdata, type, se.fit, match.arg(interval), level, offset = offset, at = at))
   if (is.null(newdata)) {
     X <- object$X; off <- if (!is.null(object$offset)) object$offset else rep_len(0, nrow(X))
   } else {
@@ -255,8 +260,7 @@ predict.gec <- function(object, newdata = NULL, type = c("response", "link", "pr
     miss <- setdiff(all.vars(Terms), names(newdata))
     if (length(miss)) stop("'newdata' is missing required variable(s): ", paste(miss, collapse = ", "), ".")
     X <- .ud_newdata_matrix(Terms, newdata, object$levels, object$contrasts, names(object$coefficients))
-    off <- if (is.null(offset)) rep_len(0, nrow(X))
-           else as.numeric(if (is.character(offset) && length(offset) == 1L) newdata[[offset]] else offset)
+    off <- .ud_newdata_offset(object, newdata, offset, nrow(X))
   }
   bad <- if (is.null(newdata)) FALSE else .ud_na_rows(X, off)     # a missing covariate or offset predicts NA
   if (any(bad)) { X[bad, ] <- 0; off[bad] <- 0 }
@@ -296,8 +300,11 @@ predict.gec <- function(object, newdata = NULL, type = c("response", "link", "pr
 #' sits at an edge; a maximum at a kink is tracked in the analytic gradient of the
 #' concentrated likelihood, which the outer BFGS uses. The feasibility floor is exact:
 #' every count must lie in `0..ceiling(mu/(1-delta))`.
-#' Runtime: about twice that of [cpb_fe()] on the same panel (the Katz recursion
-#' runs the whole support), so a 2,600-row panel in 146 units takes about two minutes.
+#' Runtime: about one and a half times that of [cpb_fe()] on the same panel (the
+#' Katz recursion runs the whole support): on the positive counts of the bundled
+#' peacekeeping panel, 2,602 rows in 146 units, `gec_fe()` takes about two and a
+#' half minutes and `cpb_fe()` about one and a half, and the two return the same
+#' fit.
 #'
 #' Limitation: unlike [cpb_fe()], `gec_fe()` has no `truncated` argument -- a
 #' concentrated zero-truncated GEC is not currently implemented. For a
@@ -306,15 +313,18 @@ predict.gec <- function(object, newdata = NULL, type = c("response", "link", "pr
 #'
 #' Short panels: `delta` and the fixed effects carry the incidental-parameters
 #' bias of nonlinear fixed-effects estimation, of order 1/T; treat `delta`
-#' cautiously below about T = 30. The covariate coefficients are not materially
-#' affected. `bias_correct = "jackknife"` removes the leading 1/T term by the
+#' cautiously below about T = 30. The covariate coefficients carry a smaller bias of
+#' the same order. `bias_correct = "jackknife"` removes the leading 1/T term by the
 #' split-panel jackknife exactly as in [cpb_fe()]: refit on each unit's temporal
 #' halves and report `2 * full - mean(halves)`, with the unit effects and fitted
 #' values re-concentrated at the corrected parameters and `logLik`/`AIC` kept at
 #' the maximum-likelihood fit (uncorrected estimates in `$uncorrected`). The
 #' same time-homogeneity validity gate applies: on panels where the two halves
-#' do not estimate a common parameter the correction is REFUSED with a warning
-#' and the maximum-likelihood fit is returned (see [cpb_fe()], Details).
+#' do not estimate a common parameter the correction is refused with a warning
+#' and the maximum-likelihood fit is returned (see [cpb_fe()], Details). As
+#' there, the covariate coefficients are corrected too, and with
+#' `se = "bootstrap"` each replicate is corrected the same way, so the standard
+#' errors include the correction's own variance.
 #'
 #' @param formula A model formula for the covariates only (no unit factor, no
 #'   intercept; the fixed effects absorb it).
@@ -330,9 +340,12 @@ predict.gec <- function(object, newdata = NULL, type = c("response", "link", "pr
 #' @param weights Optional frequency weights (a numeric vector or a column name);
 #'   see [cpb()].
 #' @param cores Worker processes for the bootstrap; see [cpb()].
-#' @param max.support Guard on the maximum evaluated support.
+#' @param max.support Guard on the evaluated support; `NULL` (default) sets
+#'   `max(500, 10 * max(y))`. See [gec()].
 #' @param inner_it Golden-section iterations for each unit's inner maximization.
 #' @param maxit,reltol Outer optimizer controls.
+#' @param time Name of the column of `data` that orders each unit's rows in
+#'   time; required by `bias_correct = "jackknife"` (see [cpb_fe()]).
 #' @param bias_correct `"none"` (default) or `"jackknife"`, the split-panel
 #'   jackknife correction for the 1/T incidental-parameters bias (see Details).
 #' @return An object of class `c("gec_fe", "gec")`.
@@ -349,14 +362,24 @@ predict.gec <- function(object, newdata = NULL, type = c("response", "link", "pr
 #' @export
 gec_fe <- function(formula, data, fe, se = c("none", "bootstrap"), B = 500, cluster = NULL,
                    offset = NULL, weights = NULL, cores = 1L, max.support = NULL, inner_it = 30L,
-                   maxit = 3000L, reltol = 1e-7, bias_correct = c("none", "jackknife")) {
+                   maxit = 3000L, reltol = 1e-7, bias_correct = c("none", "jackknife"), time = NULL) {
   .ud_no_formula_offset(formula)
   data <- .ud_drop_na_fe(data, fe)
   offset <- .ud_align_vec(offset, data); weights <- .ud_align_vec(weights, data); cluster <- .ud_align_vec(cluster, data)
+  offset_name <- .ud_offset_name(offset)                        # before a vector becomes a column
   se <- match.arg(se); bias_correct <- match.arg(bias_correct)
   .ud_check_whole(max.support, "max.support", null_ok = TRUE); .ud_check_whole(inner_it, "inner_it")
   if (se == "bootstrap") .ud_check_whole(B, "B", lower = 2)
+  if (is.character(fe) && length(fe) > 1L)
+    stop("gec_fe() concentrates out one set of fixed effects; for two-way effects add the second as dummies to ",
+         "'formula' (say + factor(year)), or use count_reg(fe = c(...)).", call. = FALSE)
   if (!is.character(fe) || length(fe) != 1L || !fe %in% names(data)) stop("'fe' must name a column of 'data'.")
+  if (!is.null(time) && (!is.character(time) || length(time) != 1L || !time %in% names(data)))
+    stop("'time' must name a column of 'data'.", call. = FALSE)
+  if (bias_correct == "jackknife" && is.null(time))
+    stop("bias_correct = \"jackknife\" splits each unit's series into its first and second halves in time, so ",
+         "it needs 'time', the column of 'data' that orders each unit's rows (rows supplied in another order would ",
+         "otherwise be split at random, which defeats the jackknife's validity gate).", call. = FALSE)
   if (!is.null(cluster) && se != "bootstrap")
     warning("'cluster' only affects the bootstrap; it is ignored with se = \"none\" (use se = \"bootstrap\").")
   if (!is.null(offset) && !(is.character(offset) && length(offset) == 1L)) {
@@ -367,9 +390,16 @@ gec_fe <- function(formula, data, fe, se = c("none", "bootstrap"), B = 500, clus
     if (length(weights) != nrow(data)) stop("'weights' must have one value per row of 'data'.")
     data[[".gec_w"]] <- as.numeric(weights); weights <- ".gec_w"
   }
-  data <- data[order(data[[fe]]), , drop = FALSE]
+  cl_label <- .ud_cluster_label(cluster)
+  if (!is.null(cluster) && !(is.character(cluster) && length(cluster) == 1L)) {
+    if (length(cluster) != nrow(data)) stop("'cluster' must have one value per row of 'data'.")
+    data[[".gec_cl"]] <- cluster; cluster <- ".gec_cl"                # vector -> column, sorts with data
+  }
+  ## unit-contiguous rows, in time order within a unit when `time` is given; results are un-sorted at the end
+  ord <- if (is.null(time)) order(data[[fe]]) else order(data[[fe]], data[[time]]); data <- data[ord, , drop = FALSE]
   mf <- stats::model.frame(formula, data, na.action = stats::na.omit, drop.unused.levels = TRUE)
   rows <- .ud_kept_rows(mf, data)
+  if (!is.null(time) && anyNA(data[[time]][rows])) stop("'time' has missing values on the estimation rows.", call. = FALSE)
   Y  <- stats::model.response(mf)
   if (!is.numeric(Y)) stop("Response must be a numeric count; got ", class(Y)[1L], ".")
   if (any(Y < 0) || any(Y != floor(Y))) stop("Response must be non-negative integer counts.")
@@ -406,35 +436,6 @@ gec_fe <- function(formula, data, fe, se = c("none", "bootstrap"), B = 500, clus
   fitted <- gec_mean_cpp(rate, delta, ms)
   support_binding <- .gec_guard_binding(rate, delta, ms)
 
-  se.beta <- setNames(rep(NA_real_, p), keep); ci.beta <- NULL; boot <- NULL; clab <- NULL
-  if (se == "bootstrap") {
-    fev  <- as.character(data[[fe]][rows]); dest <- data[rows, , drop = FALSE]
-    cval <- if (is.null(cluster)) fev else .ud_cluster_values(cluster, data, rows)
-    clab <- if (is.null(cluster)) fe else if (is.character(cluster) && length(cluster) == 1L) cluster else "custom"
-    .ud_cluster_guard(cval)
-    grp  <- split(seq_along(Y), cval)
-    one <- function(b) {
-      gs   <- sample.int(length(grp), length(grp), replace = TRUE)
-      rws  <- unlist(grp[gs], use.names = FALSE)
-      bunit <- unlist(lapply(seq_along(gs), function(k) paste0(k, "_", fev[grp[[gs[k]]]])), use.names = FALSE)
-      bd <- dest[rws, , drop = FALSE]; bd[[".bootunit"]] <- bunit
-      fb <- tryCatch(.ud_quiet_guard(gec_fe(formula, data = bd, fe = ".bootunit", se = "none", offset = offset,
-                                            weights = weights, max.support = max.support, inner_it = inner_it,
-                                            maxit = maxit, reltol = reltol)),
-                     error = function(e) NULL)
-      if (!is.null(fb)) fb$coefficients[keep] else rep(NA_real_, p)
-    }
-    boot <- do.call(rbind, .ud_lapply(seq_len(B), one, cores))
-    ok <- boot[stats::complete.cases(boot), , drop = FALSE]
-    if (nrow(ok) >= 2) {
-      se.beta <- setNames(apply(ok, 2, stats::sd), keep)
-      z <- stats::qnorm(0.975)
-      ci.beta <- cbind(lower = beta - z * se.beta, upper = beta + z * se.beta); rownames(ci.beta) <- keep
-    } else warning("Too few bootstrap resamples converged for stable inference.")
-    attr(boot, "nboot_ok") <- nrow(ok)
-    if (nrow(ok) < B / 2) warning(sprintf("only %d of %d bootstrap replicates converged; the standard errors rest on the survivors.", nrow(ok), B), call. = FALSE)
-  }
-
   ## split-panel jackknife: refit on each unit's temporal halves and remove the
   ## leading 1/T incidental-parameters bias term (see .fe_jackknife)
   uncorrected <- NULL
@@ -450,6 +451,7 @@ gec_fe <- function(formula, data, fe, se = c("none", "bootstrap"), B = 500, clus
                         torder = stats::ave(seq_along(Y), as.integer(uf), FUN = seq_along),
                         disp_lower = 0.01, disp_upper = Inf)
     if (!is.null(jk$refused)) {
+      if (.fe_jack_replicate()) stop("bias_correct = \"jackknife\" in a bootstrap replicate: ", jk$refused, call. = FALSE)
       warning("bias_correct = \"jackknife\" REFUSED: ", jk$refused,
               ". Returning the uncorrected maximum-likelihood estimates.")
       bias_correct <- "none"
@@ -462,25 +464,42 @@ gec_fe <- function(formula, data, fe, se = c("none", "bootstrap"), B = 500, clus
       rate   <- as.numeric(exp(off + fe_hat[as.integer(uf)] + X %*% beta))
       fitted <- gec_mean_cpp(rate, delta, ms)
       support_binding <- .gec_guard_binding(rate, delta, ms)
-      if (!is.null(ci.beta)) {                        # recenter the normal-approx interval
-        z <- stats::qnorm(0.975)
-        ci.beta <- cbind(lower = beta - z * se.beta, upper = beta + z * se.beta)
-        rownames(ci.beta) <- keep
-      }
     }
   }
 
-  structure(list(coefficients = beta, delta = delta, dispersion = delta, loglik = -best$value,
+  ## the bootstrap after the jackknife, so that a corrected fit's replicates are corrected too (as for cpb_fe())
+  se.beta <- setNames(rep(NA_real_, p), keep); ci.beta <- NULL; boot <- NULL; clab <- NULL
+  if (se == "bootstrap") {
+    jack_boot <- bias_correct == "jackknife"
+    fev  <- as.character(data[[fe]][rows]); dest <- data[rows, , drop = FALSE]
+    cval <- if (is.null(cluster)) fev else .ud_cluster_values(cluster, data, rows)
+    clab <- if (is.null(cluster)) fe else cl_label
+    boot <- .ud_boot(length(Y), cval, function(idx, blk) {
+      bd <- dest[idx, , drop = FALSE]; bd[[".bootunit"]] <- paste0(blk, "_", fev[idx])
+      fb <- .ud_quiet_guard(.ud_replicate(gec_fe(formula, data = bd, fe = ".bootunit", se = "none", offset = offset,
+                                   weights = weights, max.support = max.support, inner_it = inner_it,
+                                   maxit = maxit, reltol = reltol,
+                                   bias_correct = if (jack_boot) "jackknife" else "none", time = if (jack_boot) time)))
+      if (isTRUE(fb$converged)) c(fb$coefficients[keep], fb$delta, fb$fe_ref) else NULL
+    }, c(keep, "delta", "fe_ref"), B, cores, label = clab)
+    bs <- .ud_boot_stats(boot, keep, beta, normal = TRUE)          # normal approximation, as for cpb_fe()
+    se.beta <- bs$se; ci.beta <- bs$ci
+  }
+
+  fe_id <- .fe_identified(Y, as.integer(uf), nu)                   # the units the reference unit averages
+  .ud_unsort(structure(list(coefficients = beta, delta = delta, dispersion = delta, loglik = -best$value,
                  se.beta = se.beta, ci.beta = ci.beta, boot = boot, se.type = se, cluster = clab,
                  fe = setNames(fe_hat, levels(uf)), fitted.values = fitted, rate = rate, offset = off,
+                 offset_name = offset_name,
                  weights = w, nobs_weighted = if (is.null(w)) length(Y) else sum(w),
-                 xref = colMeans(X), fe_ref = mean(fe_hat),
+                 xref = colMeans(X), fe_identified = setNames(fe_id, levels(uf)), fe_ref = .fe_mean_identified(fe_hat, fe_id),
                  linear.predictors = log(rate), n = length(Y), n_units = nu, Y = Y,
                  df = p + nu + 1L, max.support = ms, support_binding = support_binding, formula = formula, fe_var = fe,
                  X = X, unit = as.integer(uf), levels = .cpb_xlevels(mf), contrasts = attr(Xf, "contrasts"),
                  converged = best$convergence == 0,
                  bias_correct = bias_correct, uncorrected = uncorrected,
-                 call = match.call()), class = c("gec_fe", "gec"))
+                 call = match.call()), class = c("gec_fe", "gec")),
+             ord[rows], c("fitted.values", "rate", "offset", "weights", "linear.predictors", "Y", "X", "unit"))
 }
 
 #' @method print gec_fe
@@ -501,17 +520,43 @@ print.gec_fe <- function(x, ...) {
   invisible(x)
 }
 
+#' Predictions from a fixed-effects GEC fit
+#'
+#' @param object A `"gec_fe"` object.
+#' @param newdata Optional covariate profiles. A row whose `fe` column names a
+#'   unit of the fit enters at that unit's estimated effect (as in [score()]
+#'   and [ceiling_exceedance()]); a row of an unseen unit, or every row when
+#'   `newdata` has no `fe` column, enters at the reference unit, the mean
+#'   fixed effect of the units whose effect the data identify (see Details of
+#'   [cpb_fe()]).
+#' @param type `"response"` (the mean) or `"link"` (the log rate).
+#' @param offset Optional offset (log scale) for the `newdata` rows; see
+#'   [predict.cpb()].
+#' @param se.fit,interval,level Standard errors (`se.fit = TRUE`) and a
+#'   `level` confidence interval (`interval = "confidence"`) of the predicted
+#'   quantity at the rows of `newdata`; see [predict.cpb()].
+#' @param ... Unused.
+#' @return A numeric vector. With `interval = "confidence"`, a matrix with
+#'   columns `fit`, `lwr` and `upr`; with `se.fit = TRUE`, a list of `fit` (the
+#'   vector or the matrix), `se.fit` and `method` (each row's interval source).
+#'   Without `se.fit`, the source is the attribute `method`.
 #' @method predict gec_fe
 #' @export
-predict.gec_fe <- function(object, newdata = NULL, type = c("response", "link"), ...) {
+predict.gec_fe <- function(object, newdata = NULL, type = c("response", "link"), offset = NULL,
+                           se.fit = FALSE, interval = c("none", "confidence"),
+                           level = 0.95, ...) {
   type <- match.arg(type)
+  if (isTRUE(se.fit) || match.arg(interval) != "none")
+    return(.ud_predict_ci(object, newdata, type, se.fit, match.arg(interval), level, offset = offset))
   if (is.null(newdata)) { rate <- object$rate } else {
     Terms <- stats::delete.response(stats::terms(object$formula))
     miss <- setdiff(all.vars(Terms), names(newdata))
     if (length(miss)) stop("'newdata' is missing required variable(s): ", paste(miss, collapse = ", "), ".")
     X <- .ud_newdata_matrix(Terms, newdata, object$levels, object$contrasts, names(object$coefficients))
-    bad <- .ud_na_rows(X); if (any(bad)) X[bad, ] <- 0         # a missing covariate predicts NA
-    rate <- as.numeric(exp(mean(object$fe) + X %*% object$coefficients))
+    off <- .ud_newdata_offset(object, newdata, offset, nrow(X))
+    bad <- .ud_na_rows(X, off); if (any(bad)) { X[bad, ] <- 0; off[bad] <- 0 }   # a missing covariate predicts NA
+    rate <- as.numeric(exp(.fe_newdata_effect(newdata, object$fe_var, object$fe, .fe_ref(object)) + off +
+                           X %*% object$coefficients))
   }
   if (is.null(newdata)) bad <- FALSE
   .ud_mask(switch(type, link = log(rate), response = .gec_mean_guarded(rate, object$delta, object$max.support, FALSE)), bad)

@@ -22,9 +22,15 @@ test_that("zi_test() from a formula does not pass on its nest's guard warning", 
 
 test_that("a cpb_fe bootstrap reports the guard once, not once per replicate", {
   skip_on_cran()
-  set.seed(7); x <- rnorm(120)                            # overdispersed counts: the ceiling runs to the guard
+  set.seed(7); x <- rnorm(120)                            # overdispersed counts: alpha runs to its upper limit
   d <- data.frame(y = rnbinom(120, mu = exp(1 + 0.3 * x), size = 1), x = x, u = rep(1:12, each = 10))
-  r <- collect(cpb_fe(y ~ x, d, fe = "u", se = "bootstrap", B = 4, max.support = 60))
+  ## the floor support's ceiling floor(lambda / (1 - alpha)) runs to the guard
+  r <- collect(cpb_fe(y ~ x, d, fe = "u", se = "bootstrap", B = 4, max.support = 60, support = "floor"))
   expect_true(r$value$support_binding)
   expect_identical(sum(grepl("reaches max.support", r$warnings, fixed = TRUE)), 1L)
+  ## King's support has no such guard: the fit reaches the equidispersed limit, reported once
+  r <- collect(cpb_fe(y ~ x, d, fe = "u", se = "bootstrap", B = 4, max.support = 60))
+  expect_false(r$value$support_binding)
+  expect_identical(sum(grepl("equidispersed limit", r$warnings, fixed = TRUE)), 1L)
+  expect_false(any(grepl("max.support", r$warnings, fixed = TRUE)))
 })

@@ -14,7 +14,7 @@ test_that("cpb recovers parameters and computes quantities of interest", {
 
   # predictions and the implied ceiling
   expect_length(predict(fit), nrow(d))
-  expect_true(all(fit$ceiling >= d$y))                        # ceiling respected in-sample
+  expect_true(all(d$y <= ceiling(fit$ceiling - 1e-9)))       # every count inside King's support in-sample
   ic <- implied_ceiling(fit, newdata = data.frame(x = 0))
   expect_true(is.finite(ic$ceiling))
   p5 <- predict(fit, newdata = data.frame(x = 0), type = "prob", at = 5)

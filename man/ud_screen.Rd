@@ -17,7 +17,8 @@ ud_screen(
   ztp_boot_B = 199L,
   cores = 1L,
   digits = 3,
-  nb_boot = NULL
+  nb_boot = NULL,
+  support = c("ceiling", "floor")
 )
 }
 \arguments{
@@ -48,7 +49,7 @@ deviation fitted to one calibration grid (no fixed effects, and that
 grid's rate profile); \code{"bootstrap"} calibrates the cutoff on the data at
 hand by a parametric bootstrap of the fitted zero-truncated Poisson null
 (simulate \code{ztp_boot_B} at-risk panels at the fitted rates, refit, and take
-the empirical 5\\% quantile of the statistic). The calibrated rule is
+the empirical 5\% quantile of the statistic). The calibrated rule is
 anti-conservative in two separable regimes: when the mean model's
 parameter count is a nontrivial share of the positive observations
 (dummy-heavy fixed-effects screens, where the null's center drifts with
@@ -72,16 +73,18 @@ under the fitted Poisson (\code{ztp_boot_B} replicates over \code{cores}), the
 package default at a boundary null (see \code{\link[=dispersion_test]{dispersion_test()}}). \code{NULL}
 (default) bootstraps it when \code{ztp_threshold = "bootstrap"} and the mean
 model is within \code{comp_max_par} and \code{comp_max_n}; otherwise the p-value is
-the asymptotic boundary mixture, which is conservative for this test. The
+the asymptotic boundary mixture. The
 bootstrap restores the random-number state, so every other result is the
 same with or without it.}
+
+\item{support}{The CPB's support, \code{"ceiling"} (King's CPB, the default) or
+\code{"floor"}; see \code{\link[=cpb]{cpb()}}.}
 }
 \value{
 An object of class \code{"ud_screen"} with \code{verdict_marginal}, \code{verdict_atrisk},
 the conditional and at-risk (ZTP-benchmarked) Pearson statistics, the NB-vs-Poisson
 LR test (\code{p_nb_method} records how its p-value was computed), a log-likelihood
-comparison, (when fit) the CPB alpha and
-ceiling-exceedance share, and the over-conditioning guard state:
+comparison, (when fit) the CPB alpha, and the over-conditioning guard state:
 \code{atrisk_skipped} (\code{TRUE} when the mean model nearly saturates the positive
 counts, so the at-risk statistic is not computed and the printout says why),
 \code{sat_ratio} (the fitted parameter share of the positives), and
@@ -95,11 +98,13 @@ Applies the diagnostic sequence developed in Bagozzi (2026): a \emph{marginal} v
 from the conditional Pearson statistic and a through-origin score regression (which
 gives the direction of dispersion), a negative-binomial-versus-Poisson test for the
 overdispersion call, and---most importantly---an \emph{at-risk} verdict on the positive
-counts benchmarked against a \strong{zero-truncated Poisson}. The last step is what
+counts (the units at risk of the event, in a hurdle's reading those that
+participate), benchmarked against a \strong{zero-truncated Poisson}. The last step is what
 separates genuine underdispersion from the artifact of conditioning on \eqn{Y>0}.
-When the data are not zero-dominated it also fits the CPB and reports a
-ceiling-exceedance diagnostic, and it fits a generalized-Poisson soft-tail
-comparator.
+When the data are not zero-dominated it also fits the CPB, and it fits a
+generalized-Poisson soft-tail comparator. (The CPB's bound is tested on
+held-out counts with \code{\link[=ceiling_exceedance]{ceiling_exceedance()}}; in sample every feasible fit
+respects it.)
 }
 \details{
 Runtime: the marginal and at-risk arms take seconds. \code{ztp_threshold = "bootstrap"}
@@ -116,10 +121,12 @@ N <- pmax(round(exp(1.4 + 0.4 * x) / 0.6), 1); y <- rbinom(250, N, 0.6)
 ud_screen(y ~ x, data = data.frame(y = y, x = x))
 }
 \references{
-King, G. (1989). Variance specification in event count models.
+King, G. (1989). Variance specification in event count models:
+From restrictive assumptions to a generalized estimator.
 \emph{AJPS} 33(3):762-784.
 
-Bagozzi, B. E. (2026). Revisiting underdispersion in political science.
+Bagozzi, B. E. (2026). Revisiting Underdispersion in Political Science:
+Diagnostics and a Typology for Count Data.
 Companion manuscript.
 }
 \seealso{

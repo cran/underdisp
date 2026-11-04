@@ -32,3 +32,9 @@ test_that("compare_models validates inputs and ranks models", {
   expect_error(compare_models(h), "at least two")
   expect_error(compare_models(h, lm(y ~ x, d)), "fitted models from this package")
 })
+
+test_that("compare_models warns when the models were fit to different responses", {
+  set.seed(4); d1 <- data.frame(x = rnorm(100)); d1$y <- rpois(100, 2); d2 <- d1; d2$y <- rev(d1$y)
+  expect_warning(compare_models(a = count_reg(y ~ x, d1, family = "poisson"), b = count_reg(y ~ x, d2, family = "poisson")),
+                 "different responses")
+})

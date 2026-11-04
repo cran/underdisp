@@ -4,13 +4,14 @@
 ##
 ## Underdispersion has more than one mechanism, and the mechanisms leave
 ## different signatures in how the conditional dispersion moves with the mean:
-## a hard ceiling (CPB) and the Katz family hold Var/Mean constant (alpha,
+## a hard ceiling (CPB) and the Katz family hold Var/Mean near a constant (alpha,
 ## delta); the COM-Poisson's ratio drifts toward 1/nu only as the mean grows;
 ## the gamma-count and double Poisson sit near 1/alpha and 1/theta but bend
 ## at small means; the negative binomial's ratio rises linearly in the mean.
 ## Binning the data by the fitted mean and plotting the empirical Pearson
-## ratio against each family's implied curve shows which mechanism the data
-## follow and where a family's variance function fails.
+## ratio against each family's implied curve shows which variance function the
+## data follow and where a family's fails (a fitted distribution does not by
+## itself identify the process behind it).
 ## ---------------------------------------------------------------------------
 
 ## per-observation untruncated mean, variance, and P(0) for a single-equation fit
@@ -19,9 +20,9 @@
   ## and alpha * rate, delta * rate are the moments only on an unbounded or
   ## integer-lattice support)
   if (inherits(fit, c("cpb", "cpb_fe"))) {
-    lam <- .cpb_rate(fit); a <- fit$alpha
-    p0 <- vapply(lam, function(l) .cpb_pmf1(l, a, 0L, FALSE)[1L], numeric(1))
-    m <- .cpb_moments(lam, a, FALSE)
+    lam <- .cpb_rate(fit); a <- fit$alpha; sup <- .cpb_support(fit)
+    p0 <- vapply(lam, function(l) .cpb_pmf1(l, a, 0L, FALSE, support = sup)[1L], numeric(1))
+    m <- .cpb_moments(lam, a, FALSE, sup)
     list(mean = m$mean, var = m$var, p0 = p0, truncated = isTRUE(fit$truncated))
   } else if (inherits(fit, c("gec", "gec_fe"))) {
     lam <- if (!is.null(fit$rate)) fit$rate else exp(fit$linear.predictors)
@@ -55,13 +56,19 @@
 #' differ in how their dispersion moves with the mean: the CPB and the Katz
 #' family hold it essentially constant (at `alpha` and `delta`; the implied
 #' curves are the exact moments of the fitted pmf, so the renormalized CPB's
-#' ratio dips a little below `alpha` where the ceiling is only two or three),
+#' ratio rises above `alpha` where the implied ceiling is small: by up to about a
+#' third at `alpha = 0.3` where \eqn{\lambda/(1-\alpha)} lies between one and
+#' three, and toward one, the Poisson's value, as the rate falls toward zero; on
+#' the floor support it dips below `alpha` instead),
 #' the COM-Poisson, gamma-count, and double Poisson approach a constant only as
 #' the mean grows and rise toward the Poisson at small means, and the negative
-#' binomial's ratio rises linearly. The profile therefore
-#' shows which mechanism the data follow, where a family's variance function
-#' fails, and whether the observed underdispersion is confined to a range of
-#' means. Zero-truncated fits are profiled on their conditional moments. With
+#' binomial's ratio rises linearly; the hyper-Poisson's cannot fall below
+#' \eqn{1 - 1/\mu} (\eqn{1 - \mu} below a mean of one), so it approaches one as
+#' the mean grows, and the EWP's follows its two tail weights. The profile
+#' therefore shows which variance function the data follow (a fitted
+#' distribution does not by itself identify the process behind it), where a
+#' family's fails, and whether the observed underdispersion is confined to a
+#' range of means. Zero-truncated fits are profiled on their conditional moments. With
 #' frequency weights (those of the first model) the bins hold equal weight
 #' rather than equal numbers of rows, each row kept whole, every bin statistic
 #' is a weighted mean, and `n` is the bin's weight total, so a weighted fit is

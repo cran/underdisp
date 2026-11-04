@@ -9,13 +9,19 @@
   newdata = NULL,
   type = c("response", "participation", "intensity"),
   offset = NULL,
+  se.fit = FALSE,
+  interval = c("none", "confidence"),
+  level = 0.95,
   ...
 )
 }
 \arguments{
 \item{object}{A \code{"hurdle_count"} object.}
 
-\item{newdata}{Optional data frame of covariate profiles.}
+\item{newdata}{Optional data frame of covariate profiles. A fixed-effects
+unit an equation has not seen, or every row when its column is absent,
+enters that equation at the reference unit, and a unit at a limit at that
+limit (see \verb{fe,part_fe} in \code{\link[=hurdle_count]{hurdle_count()}}).}
 
 \item{type}{\code{"response"} (marginal E(Y), zeros included), \code{"participation"}
 (P(Y > 0)), or \code{"intensity"} (E(Y | Y > 0)).}
@@ -23,10 +29,17 @@
 \item{offset}{Optional offset (log scale) for the intensity when predicting on
 \code{newdata}; a numeric vector or a column name in \code{newdata}.}
 
+\item{se.fit, interval, level}{Standard errors (\code{se.fit = TRUE}) and a
+\code{level} confidence interval (\code{interval = "confidence"}) of the predicted
+quantity at the rows of \code{newdata}; see \code{\link[=predict.cpb]{predict.cpb()}}.}
+
 \item{...}{Unused.}
 }
 \value{
-A numeric vector.
+A numeric vector. With \code{interval = "confidence"}, a matrix with
+columns \code{fit}, \code{lwr} and \code{upr}; with \code{se.fit = TRUE}, a list of \code{fit} (the
+vector or the matrix), \code{se.fit} and \code{method} (each row's interval source).
+Without \code{se.fit}, the source is the attribute \code{method}.
 }
 \description{
 Predict from a hurdle Poisson/NB fit
