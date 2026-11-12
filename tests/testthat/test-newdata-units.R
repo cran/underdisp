@@ -140,7 +140,8 @@ test_that("dispersion_test()'s fixed-effects null does not depend on centring a 
   d <- data.frame(y = y, u = u, year = yr, yc = yr - mean(yr))
   t1 <- q(dispersion_test(cpb_fe(y ~ year, d, fe = "u"), B = 0))
   t2 <- q(dispersion_test(cpb_fe(y ~ yc, d, fe = "u"), B = 0))
-  expect_equal(unname(t1$statistic), unname(t2$statistic), tolerance = 1e-6)
+  ## where cpb_fe() stops sets the gap: 4e-7 relative on x86_64, 1.6e-6 on Linux ARM64; 0.1.x was off by a factor of 1e10
+  expect_equal(unname(t1$statistic), unname(t2$statistic), tolerance = 1e-4)
 })
 
 test_that("past the 1e5-term cap, predicted probabilities and draws are NA with a warning", {

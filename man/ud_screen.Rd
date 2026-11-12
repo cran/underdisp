@@ -44,9 +44,9 @@ generalized-Poisson and COM-Poisson comparators (defaults 30 and 5000).}
 
 \item{ztp_threshold}{How to set the at-risk test's underdispersion cutoff.
 \code{"calibrated"} (default) uses the simulation-calibrated rule
-\eqn{1 - 2.27/\sqrt{n_+}}, whose constant is an estimated standard
-deviation fitted to one calibration grid (no fixed effects, and that
-grid's rate profile); \code{"bootstrap"} calibrates the cutoff on the data at
+\eqn{1 - 2.27/\sqrt{n_+}}, whose constant is a scale matched to the
+simulated null's 5\% quantile on one calibration design (no fixed effects,
+and that design's rate profile); \code{"bootstrap"} calibrates the cutoff on the data at
 hand by a parametric bootstrap of the fitted zero-truncated Poisson null
 (simulate \code{ztp_boot_B} at-risk panels at the fitted rates, refit, and take
 the empirical 5\% quantile of the statistic). The calibrated rule is

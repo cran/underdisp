@@ -1,6 +1,6 @@
-6214c0a7062bf401f956842890659d66 *DESCRIPTION
+242836808b0c73544623be06f82c9e7e *DESCRIPTION
 609454af9b2e2cf66e49107782c9c526 *NAMESPACE
-2be83fbc94f24250ba7e78038d99214c *NEWS.md
+e99d0e0e56ecc30c3e732408d55bb08f *NEWS.md
 0f1e473152b34b86f84bc70c002c8eba *R/RcppExports.R
 20df093c71be626b4c3d94d4a9c41ec9 *R/bootstrap.R
 4211aca5bc88f31f979ab413334dab79 *R/broom.R
@@ -30,7 +30,7 @@ f086cfbab524542250684ae2f1e7c17f *R/qoi_count.R
 a6e79ce9cb4bf9be3f7f771a6b5ec1fd *R/qoi_predict.R
 541a21beef3ff7e607f68ff63d205621 *R/qoi_unified.R
 e1e9bd0c64bd69aece1d74f13bf56f18 *R/simulate.R
-a13b4594a49e9db255a80fd57c2fec2d *R/ud_screen.R
+7bd1c975957667f66909e0e0475a5530 *R/ud_screen.R
 9402a31b99d9f3db33f237285fcc2421 *R/underdisp-package.R
 d07a80346450c1d26114853fa7438d1e *R/utils.R
 2678061b33b97bd30e087f28a214991a *R/zi.R
@@ -102,7 +102,7 @@ ba4f134300c9033f2187c54e0d88f077 *man/score.Rd
 ea037c95e774ab31aa372c8e93bf4981 *man/simulate.underdisp.Rd
 c1c73848877e3414b9a51bfef098a1c3 *man/summary.cpb.Rd
 485187d49e3ab2c644e005480977f898 *man/tidy.cpb.Rd
-8c686c95f62f3e898f9580b0a1a2daa3 *man/ud_screen.Rd
+655b3af7c697369e274ad54389e3b6d3 *man/ud_screen.Rd
 e6939f6e5911a790a2bc5219f0428049 *man/underdisp-package.Rd
 f245cc5c41afbd1179d213d15b82be15 *man/vcov.cpb_fe.Rd
 6b19b7d224b1626360b45845b3cb546f *man/zi_count.Rd
@@ -151,7 +151,7 @@ ffe0f92e0b7ab5eac7a34c99b861ef28 *tests/testthat/test-jackknife.R
 679a7c5174d5c8993f0f3a34c0062a52 *tests/testthat/test-king-support.R
 8bf138227534258a93d37f420ecd0880 *tests/testthat/test-newdata-coding.R
 8bffcae4519c212430a911665a8553ee *tests/testthat/test-newdata-offsets.R
-f795b3d8725d1dfb903118b80faf318d *tests/testthat/test-newdata-units.R
+b9f05e5fbd68ad02beac45489a70524d *tests/testthat/test-newdata-units.R
 f75c211b605d3d3a7a2e001b4302ae30 *tests/testthat/test-numerics-accuracy.R
 610c3a61df8c2ca2bee7616250a99dc5 *tests/testthat/test-overconditioning.R
 fc73bd97a9a2746acd3575969c8705c0 *tests/testthat/test-parity2.R
